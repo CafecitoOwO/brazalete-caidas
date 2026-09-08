@@ -1,8 +1,8 @@
 {
-  "id": "brazalete-caidas",
-  "name": "Brazalete de monitoreo",
-  "short_name": "Brazalete",
-  "description": "Deteccion de caidas y monitoreo de ritmo cardiaco, con aviso al cuidador a cualquier distancia.",
+  "id": "cuidapp",
+  "name": "CuidAPP — deteccion de caidas",
+  "short_name": "CuidAPP",
+  "description": "Detecta caidas con los sensores del telefono y avisa al cuidador a cualquier distancia.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -10,10 +10,10 @@
   "background_color": "#111417",
   "theme_color": "#111417",
   "lang": "es",
-  "categories": ["health", "medical"],
+  "categories": ["health", "medical", "lifestyle"],
   "icons": [
-    { "src": "icono-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icono-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icono-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "cuidapp-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "cuidapp-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "cuidapp-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }

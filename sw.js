@@ -1,4 +1,4 @@
-/* Service worker del Brazalete.
+/* Service worker de CuidAPP.
 
    Hace dos cosas:
    1. Que Chrome ofrezca "Instalar aplicacion" (sin esto solo sale un
@@ -7,18 +7,20 @@
       100% local, asi que sigue funcionando; lo unico que se pierde sin
       red es el aviso al cuidador.
 
-   Estrategia: red primero, cache como respaldo. Asi cada vez que
-   publicamos una version nueva el telefono la coge sola, sin trucos
-   para borrar la cache.                                              */
+   Estrategia: red primero, cache como respaldo. Asi cada version nueva
+   la coge sola, sin trucos para vaciar la cache.                     */
 
-const CACHE = 'brazalete-v1';
+const CACHE = 'cuidapp-v2';
 const ARCHIVOS = [
   './',
   './index.html',
+  './estilos.css',
+  './app.js',
   './manifest.json',
   './mqtt.min.js',
-  './icono-192.png',
-  './icono-512.png'
+  './cuidapp-192.png',
+  './cuidapp-512.png',
+  './cuidapp-maskable.png'
 ];
 
 self.addEventListener('install', function (e) {
@@ -26,7 +28,7 @@ self.addEventListener('install', function (e) {
   e.waitUntil(
     caches.open(CACHE)
       .then(function (c) { return c.addAll(ARCHIVOS); })
-      .catch(function () { /* si algo no esta, no bloquear la instalacion */ })
+      .catch(function () { /* si algo falta, no bloquear la instalacion */ })
   );
 });
 
