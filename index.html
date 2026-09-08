@@ -122,6 +122,15 @@ video{display:none}
 <button class="sec" id="btnInstalar" style="display:none;margin-bottom:14px">
   Instalar la app en este telefono</button>
 
+<div class="card" id="cardApk" style="border-color:#2f6b3f">
+  <div class="etq" style="color:#4ade80">App de Android &mdash; para el paciente</div>
+  <div class="prog">Esta pagina deja de vigilar si bloqueas la pantalla o cambias de app:
+    es un limite del navegador. La app de Android <b>sigue vigilando siempre</b>, muestrea al
+    doble de velocidad y su aviso despierta el telefono aunque este bloqueado.<br><br>
+    El <b>cuidador</b> no necesita instalarla: con esta pagina le basta.</div>
+  <div class="botones"><button class="sec" id="btnApk">Descargar la app de Android</button></div>
+</div>
+
 <!-- ================= MONITOR ================= -->
 <div class="pag ver" id="pagMonitor">
 
@@ -1072,6 +1081,9 @@ $('btnVaciar').onclick=function(){
   if(confirm('Se borran las '+grabs.length+' grabaciones. Descargaste el dataset?')){
     grabs=[]; guardarGrabs(); pintarLista();
   }
+};
+$('btnApk').onclick=function(){
+  location.href='https://github.com/CafecitoOwO/brazalete-caidas/releases/download/v1.0/brazalete-v1.0.apk';
 };
 $('btnPulso').onclick=medirPulso;
 $('btnBLE').onclick=conectarBLE;

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Theme.Brazalete" parent="Theme.MaterialComponents.NoActionBar">
+        <item name="android:statusBarColor">@color/fondo</item>
+        <item name="android:navigationBarColor">@color/fondo</item>
+        <item name="android:windowBackground">@color/fondo</item>
+        <item name="colorPrimary">@color/texto</item>
+        <item name="colorAccent">@color/azul</item>
+        <item name="android:textColor">@color/texto</item>
+        <item name="android:windowLightStatusBar" tools:targetApi="m">false</item>
+    </style>
+</resources>

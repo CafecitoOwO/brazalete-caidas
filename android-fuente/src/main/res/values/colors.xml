@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="fondo">#111417</color>
+    <color name="tarjeta">#191D21</color>
+    <color name="borde">#262B30</color>
+    <color name="texto">#E8E6E1</color>
+    <color name="apagado">#8D8A83</color>
+    <color name="verde">#4ADE80</color>
+    <color name="ambar">#FBBF24</color>
+    <color name="rojo">#F87171</color>
+    <color name="rojoFuerte">#8A1C1C</color>
+    <color name="azul">#60A5FA</color>
+</resources>
