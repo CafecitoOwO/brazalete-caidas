@@ -1,71 +1,134 @@
-# Brazalete — detección de caídas y monitoreo cardíaco
+<div align="center">
 
-Aplicación web que detecta caídas usando el acelerómetro y el giroscopio del
-celular, y avisa a otro teléfono a cualquier distancia.
+<img src="cuidapp-192.png" width="96" alt="CuidAPP">
 
-Proyecto escolar. **No es un dispositivo médico.**
+# CuidAPP
 
-## Qué hace
+**Detección automática de caídas y aviso remoto,
+usando los sensores que tu teléfono ya tiene.**
 
-- **Detecta caídas** con el mismo algoritmo que llevará el brazalete ESP32:
-  no una simple regla de "pasó de 3 g", sino un sistema de puntos que exige
-  impacto **y** quietud posterior, y suma confianza si además hubo caída
-  libre, un pico de giro alto o un cambio de orientación grande. Eso es lo
-  que separa una caída real de sentarse de golpe en el sofá.
-- **Da 25 segundos para cancelar** antes de dar la alarma por buena. Un falso
-  positivo cancelable cuesta poco; un falso negativo, mucho.
-- **Avisa a otro celular** por internet, sin límite de distancia, con el
-  estado del paciente, sus constantes y su ubicación GPS.
-- **Mide el pulso** tapando la cámara trasera con el dedo, el mismo principio
-  óptico que usa el sensor MAX30102.
-- **Graba datasets etiquetados** y los exporta como CSV, para ajustar los
-  umbrales con datos reales en vez de con números inventados.
+[Abrir la aplicación](https://cafecitoowo.github.io/brazalete-caidas/) ·
+[Descargar para Android](https://github.com/CafecitoOwO/brazalete-caidas/releases/latest) ·
+[Informe técnico](docs/INFORME.md)
 
-## Los dos modos
+</div>
 
-Se eligen en el engranaje de arriba a la derecha.
+---
 
-| Modo | Para quién | Qué hace |
+## Qué es
+
+Una persona mayor que vive sola se cae. Lo que decide el pronóstico no suele
+ser el golpe, sino **cuánto tiempo pasa en el suelo antes de que alguien
+acuda**.
+
+CuidAPP detecta esa caída con el acelerómetro y el giroscopio del propio
+teléfono, y avisa a un familiar esté donde esté. Sin comprar ningún
+dispositivo.
+
+## Lo difícil no es detectar el golpe
+
+Detectar un impacto es trivial. El problema es que **sentarse de golpe en un
+sofá produce un impacto parecido al de una caída**. Un detector que solo mire
+el umbral de aceleración da tantas falsas alarmas que el usuario acaba
+apagándolo.
+
+Lo que distingue una caída real no es el impacto, sino lo que pasa después:
+
+| | Sentarse de golpe | Caída real |
 |---|---|---|
-| **Brazalete** | el celular de quien lo lleva | Detecta y envía |
-| **Cuidador** | cualquier otro celular | Solo recibe y avisa |
+| Pico de aceleración | 1,8 – 2,5 g | 3 g o más |
+| Después del impacto | **sigue moviéndose** | **quietud de 2 a 4 s** |
 
-Los dos tienen que usar el mismo **código de sala**. La forma fácil de
-emparejarlos es el botón "Enviar enlace al cuidador": manda un enlace que
-configura el otro teléfono solo.
+Por eso el algoritmo exige **impacto e inactividad posterior** como
+condiciones obligatorias, y usa la caída libre, el giro brusco y el cambio de
+orientación solo para sumar confianza. Detalles en el
+[informe técnico](docs/INFORME.md).
 
-## Cómo se usa
+## Los tres papeles
 
-1. Abrir la página en Chrome de Android.
-2. Pulsar **"Instalar la app en este teléfono"**.
-3. Pulsar **"Iniciar vigilancia"** y aceptar los permisos.
-4. Sujetar el celular al brazo, siempre en la misma posición.
+| Papel | Para quién | Qué hace |
+|---|---|---|
+| **Paciente** | quien lleva el teléfono | Detecta, avisa y graba datos |
+| **Cuidador** | familiar o cuidador | Recibe avisos de **varias personas** y guarda su historial |
+| **Desarrollador** | mantenimiento | Ve todas las salas activas |
 
-Para probar sin caerse: el botón **"Simular caída"** dispara la secuencia
-completa.
+Se emparejan por enlace: el paciente toca *«Enviar enlace a mi cuidador»* y el
+otro lo abre. No hay que teclear códigos.
+
+## Dos aplicaciones, el mismo protocolo
+
+|  | Web | Android nativa |
+|---|---|---|
+| Instalación | ninguna | APK |
+| Muestreo medido | 56 Hz | **120–142 Hz** |
+| Con la pantalla apagada | **se suspende** | sigue vigilando |
+| Despierta el móvil bloqueado | no | sí |
+| Para qué | demo y respaldo | **uso real, los dos papeles** |
+
+Las dos hablan el mismo protocolo, así que se entienden entre sí.
+
+> **Los dos, paciente y cuidador, necesitan la app nativa.** Con la web, el
+> cuidador solo recibe avisos mientras la tenga abierta y mirando: justo
+> cuando no hacen falta.
+
+## Sin servidor propio
+
+No hay backend ni base de datos. La persistencia se resuelve así:
+
+1. **El teléfono del cuidador es el archivo.** Su servicio en primer plano
+   está siempre conectado y guarda hasta 1500 registros, exportables a CSV.
+2. **Los mensajes retenidos del broker son el respaldo**, para recuperar lo
+   ocurrido mientras el cuidador estuvo desconectado.
+
+Consecuencia favorable: **los datos del paciente no viven en ningún servidor
+de terceros**, sino en el teléfono de quien lo cuida.
+
+## Estructura
+
+```
+├── index.html          la aplicación
+├── estilos.css
+├── app.js
+├── sw.js               permite instalarla y usarla sin internet
+├── manifest.json
+├── mqtt.min.js         local, para no depender de un CDN
+├── android-fuente/     código de la app nativa de Android
+└── docs/               informe, resumen y guía de uso
+```
+
+Fuera de este repositorio, en el proyecto completo, hay además un script de
+Python que ajusta los umbrales de detección contra datos reales grabados con
+la aplicación.
+
+## Cómo compilar la app de Android
+
+Sin Android Studio, solo herramientas de línea de comandos:
+
+```bash
+gradle assembleDebug
+```
+
+Requiere JDK 17 y el SDK de Android (`platforms;android-34`,
+`build-tools;34.0.0`), con `JAVA_HOME` y `ANDROID_HOME` definidos.
 
 ## Limitaciones conocidas
 
-Vale la pena decirlas en la presentación antes de que las pregunten:
+Se enumeran porque condicionan el uso real:
 
-- **Si se bloquea la pantalla, los sensores se detienen.** Es una restricción
-  del navegador, no un fallo. La app mantiene la pantalla encendida mientras
-  vigila, pero si se cambia de aplicación se corta. Es exactamente el
-  argumento a favor de construir el brazalete dedicado.
-- **El aviso remoto necesita internet** en el teléfono del paciente. Sin
-  señal, la detección local sigue funcionando y el aviso sale en cuanto
-  vuelva la conexión.
-- **Cualquiera que conozca el código de sala puede ver los datos.** El
-  servidor es público y sin contraseña. Conviene usar un código largo y no
-  ponerlo en la diapositiva.
-- **En iPhone funciona peor**: el flash no se enciende desde el navegador, así
-  que la medición de pulso es poco fiable. Los sensores de movimiento sí van.
+- La versión web **no vigila en segundo plano**. Es un límite del navegador.
+- El aviso remoto **necesita internet** en el teléfono del paciente. Sin
+  conexión, la detección local sigue y el aviso sale al recuperarla.
+- **Cualquiera que conozca el código de sala puede leer esos datos.** El
+  broker es público y sin contraseña.
+- Los umbrales actuales **no están validados con datos reales** todavía.
+- La medición de pulso por cámara es orientativa.
 
-## Archivos
+## Aviso
 
-| Archivo | Qué es |
-|---|---|
-| `index.html` | La aplicación entera |
-| `sw.js` | Service worker: permite instalarla y que funcione sin internet |
-| `manifest.json` | Metadatos de la app instalada |
-| `mqtt.min.js` | Librería de conexión, local para no depender de un CDN |
+Proyecto escolar. **No es un dispositivo médico** y no sustituye a la
+supervisión profesional. Debe usarse como complemento, nunca como único
+mecanismo de aviso.
+
+## Licencia
+
+MIT — ver [LICENSE](LICENSE).
