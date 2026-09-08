@@ -335,7 +335,7 @@ const esBrazalete=function(){ return cfg.modo==='brazalete'; };
 let vigilando=false, wakeLock=null, mqttCli=null;
 let audio=null, alarma=null, cuentaAtras=null;
 let dispositivo=null, tUltimoRemoto=0;
-let estadoPaciente='ok', vigilanciaT0=0;
+let estadoPaciente='ok', vigilanciaT0=0, pausaRemota=false;
 let nMuestras=0, tVentanaHz=0, hzActual=0, totalMuestras=0;
 const bufM=[];                 // ultimos 3 s de muestras
 const serieAcc=[], serieBpm=[];
@@ -627,8 +627,20 @@ async function iniciarSensores(){
 async function pedirWakeLock(){
   try{ if(navigator.wakeLock) wakeLock=await navigator.wakeLock.request('screen'); }catch(e){}
 }
+// Si el usuario cambia de app, el navegador congela la pagina y los
+// sensores dejan de leer. No se puede evitar, pero SI se puede avisar:
+// mandamos el ultimo mensaje justo antes de que nos congelen, para que el
+// cuidador sepa que la vigilancia esta pausada y no crea que todo va bien.
 document.addEventListener('visibilitychange',function(){
-  if(document.visibilityState==='visible' && vigilando) pedirWakeLock();
+  if(!vigilando) return;
+  if(document.visibilityState==='hidden'){
+    enviarVitales();
+    log('Vigilancia pausada','Cambiaste de app o se apago la pantalla','ambar');
+  }else{
+    pedirWakeLock();
+    enviarVitales();
+    log('Vigilancia reanudada','','verde');
+  }
 });
 
 async function alternarVigilancia(){
@@ -872,7 +884,9 @@ function conectarNube(){
       tUltimoRemoto=Date.now();
       if(d.bpm) pintarBpm(d.bpm);
       if(d.bat!=null) pintarBat(d.bat);
-      $('txtVig').textContent=d.vig?'Activa (remota)':'Detenida (remota)';
+      pausaRemota=!!d.pausa;
+      $('txtVig').textContent = d.pausa ? 'Pausada (otra app)'
+                                        : (d.vig?'Activa (remota)':'Detenida (remota)');
       $('hz').textContent=(d.hz||0)+' Hz';
       pintarPanelCuidador();
     }catch(e){}
@@ -948,13 +962,18 @@ function avisarTelegram(txt){
     .then(function(){log('Telegram enviado','','verde');})
     .catch(function(){log('Telegram enviado (sin confirmar)');});
 }
-setInterval(function(){
+function enviarVitales(){
   if(!esBrazalete()) return;
   const b=parseInt($('bpm').textContent,10);
   const p=parseInt($('bat').textContent,10);
+  // La pausa se calcula aqui, no se pasa por parametro: si el navegador
+  // congela la pagina y este intervalo se dispara tarde, el mensaje sigue
+  // diciendo la verdad en vez de un "todo bien" que ya no es cierto.
+  const pausa = document.visibilityState==='hidden';
   publicar('vitales',JSON.stringify({bpm:isNaN(b)?0:b,bat:isNaN(p)?0:p,
-    vig:vigilando,hz:hzActual,t:Date.now()}));
-},3000);
+    vig:vigilando,pausa:pausa,hz:hzActual,t:Date.now()}));
+}
+setInterval(enviarVitales,3000);
 setInterval(function(){
   if(esBrazalete()||!tUltimoRemoto) return;
   if(Date.now()-tUltimoRemoto>30000) $('txtVig').textContent='Sin señal';
@@ -1092,21 +1111,32 @@ function pintarPanelCuidador(){
   if(esBrazalete()){ c.style.display='none'; return; }
   c.style.display='';
   const e=$('estPac');
-  if(estadoPaciente==='caida'){       e.textContent='CAIDA CONFIRMADA'; e.style.color='#f87171'; }
-  else if(estadoPaciente==='prealerta'){ e.textContent='Posible caida';   e.style.color='#fbbf24'; }
-  else if(!tUltimoRemoto){            e.textContent='Sin datos';        e.style.color='#8d8a83'; }
-  else{                               e.textContent='Todo normal';      e.style.color='#4ade80'; }
+  const seg = tUltimoRemoto ? Math.round((Date.now()-tUltimoRemoto)/1000) : null;
+  // Si lleva mas de 45 s sin dar señales, algo va mal aunque no haya
+  // llegado ningun aviso: el telefono pudo congelarse o quedarse sin red.
+  const mudo = seg!==null && seg>45;
+
+  if(estadoPaciente==='caida'){          e.textContent='CAIDA CONFIRMADA';   e.style.color='#f87171'; }
+  else if(estadoPaciente==='prealerta'){ e.textContent='Posible caida';      e.style.color='#fbbf24'; }
+  else if(seg===null){                   e.textContent='Sin datos';          e.style.color='#8d8a83'; }
+  else if(mudo){                         e.textContent='SIN SEÑAL';          e.style.color='#f87171'; }
+  else if(pausaRemota){                  e.textContent='VIGILANCIA PAUSADA'; e.style.color='#fbbf24'; }
+  else{                                  e.textContent='Todo normal';        e.style.color='#4ade80'; }
 
   let info;
-  if(!tUltimoRemoto){
+  if(seg===null){
     info='Esperando al brazalete. Comprueba que el otro telefono tenga el mismo '+
          'codigo de sala y la vigilancia iniciada.';
+  }else if(mudo){
+    const m=Math.round(seg/60);
+    info='Sin noticias desde hace '+(seg<120?seg+' s':m+' min')+'. El telefono del '+
+         'paciente puede haberse quedado sin bateria, sin internet, o con la app cerrada. '+
+         'NO se estan detectando caidas.';
+  }else if(pausaRemota){
+    info='El paciente cambio de aplicacion o se le apago la pantalla, asi que el '+
+         'telefono dejo de vigilar. No se detectaran caidas hasta que vuelva a abrir la app.';
   }else{
-    const s=Math.round((Date.now()-tUltimoRemoto)/1000);
-    if(s<60)      info='Ultimo dato hace '+s+' s. Conexion correcta.';
-    else if(s<600)info='Ultimo dato hace '+Math.round(s/60)+' min. Puede que el otro telefono '+
-                       'haya cerrado la app o perdido internet.';
-    else          info='Sin datos desde hace '+Math.round(s/60)+' min. El brazalete no esta enviando.';
+    info='Ultimo dato hace '+seg+' s. Conexion correcta.';
   }
   $('estPacInfo').textContent=info;
 }
