@@ -28,6 +28,10 @@ public class Ajustes {
     public String getTelefono()        { return p.getString("tel", "112"); }
     public void   setTelefono(String v){ p.edit().putString("tel", v).apply(); }
 
+    /** Historial de eventos guardado, para que sobreviva a reinicios. */
+    public String getHistorial()         { return p.getString("historial", ""); }
+    public void   setHistorial(String v) { p.edit().putString("historial", v).apply(); }
+
     /** Umbrales, para poder pegar los que salgan del analisis en Python. */
     public void cargarEn(Detector.Umbrales u) {
         u.impactoG   = p.getFloat("impactoG",   u.impactoG);

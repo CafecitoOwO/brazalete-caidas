@@ -71,6 +71,45 @@
                     android:textSize="13sp" />
             </LinearLayout>
 
+            <!-- Historial guardado en este telefono (solo cuidador) -->
+            <LinearLayout
+                android:id="@+id/tarjetaHistorial"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                android:background="@color/tarjeta"
+                android:orientation="vertical"
+                android:padding="18dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="HISTORIAL DEL PACIENTE"
+                    android:textColor="@color/apagado"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/statsHistorial"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:lineSpacingExtra="4dp"
+                    android:text="Sin registros todavia."
+                    android:textColor="@color/texto"
+                    android:textSize="14sp" />
+
+                <Button
+                    android:id="@+id/btnExportar"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:backgroundTint="@color/borde"
+                    android:text="Guardar historial en Descargas"
+                    android:textColor="@color/texto"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
             <!-- Deteccion -->
             <LinearLayout
                 android:layout_width="match_parent"

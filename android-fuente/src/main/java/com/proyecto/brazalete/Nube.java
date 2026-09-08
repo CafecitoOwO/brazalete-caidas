@@ -24,6 +24,8 @@ public class Nube implements MqttCallback {
     public interface Escucha {
         void alConectar(boolean conectado, String servidor);
         void alEvento(String tipo, String datos, boolean viejo);
+        /** Datos periodicos del paciente. Solo los recibe el cuidador. */
+        void alVitales(int bpm, int bateria, boolean vigilando, boolean pausa, int hz);
     }
 
     private static final String TAG = "Nube";
@@ -140,6 +142,27 @@ public class Nube implements MqttCallback {
         } catch (Exception ignored) { }
     }
 
+    /**
+     * Publica la lista de eventos como mensaje retenido.
+     *
+     * Es el truco que evita montar un servidor: el broker guarda el ultimo
+     * mensaje retenido de cada tema y se lo entrega a quien se suscriba
+     * despues. Asi el cuidador ve el historial aunque haya tenido la app
+     * cerrada durante horas.
+     */
+    public void enviarHistorial(java.util.List<String> eventosJson) {
+        try {
+            StringBuilder sb = new StringBuilder("{\"evs\":[");
+            int desde = Math.max(0, eventosJson.size() - 60);
+            for (int i = desde; i < eventosJson.size(); i++) {
+                if (i > desde) sb.append(',');
+                sb.append(eventosJson.get(i));
+            }
+            sb.append("]}");
+            publicar("historial", sb.toString(), true);
+        } catch (Exception ignored) { }
+    }
+
     public void enviarUbicacion(double lat, double lon, int precision) {
         try {
             JSONObject j = new JSONObject();
@@ -160,6 +183,18 @@ public class Nube implements MqttCallback {
     @Override public void messageArrived(String tema, MqttMessage msg) {
         String txt = new String(msg.getPayload());
         if (txt.isEmpty()) return;
+
+        if (tema.endsWith("/vitales")) {
+            try {
+                JSONObject j = new JSONObject(txt);
+                if (escucha != null) {
+                    escucha.alVitales(j.optInt("bpm"), j.optInt("bat"),
+                            j.optBoolean("vig"), j.optBoolean("pausa"), j.optInt("hz"));
+                }
+            } catch (Exception ignored) { }
+            return;
+        }
+
         if (!tema.endsWith("/evento")) return;
         try {
             JSONObject j = new JSONObject(txt);

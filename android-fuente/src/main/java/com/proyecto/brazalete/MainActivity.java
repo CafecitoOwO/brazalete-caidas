@@ -33,7 +33,8 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
     private TextView titulo, subestado, estadoVig, datosSensor, notaSegundoPlano;
     private TextView estadoPaciente, infoPaciente;
     private TextView alertaTitulo, alertaCuenta, alertaTexto, alertaDatos;
-    private LinearLayout tarjetaCuidador, pantallaAlerta;
+    private LinearLayout tarjetaCuidador, tarjetaHistorial, pantallaAlerta;
+    private TextView statsHistorial;
     private Button btnVigilar;
     private EditText campoSala;
     private RadioButton modoBrazalete, modoCuidador;
@@ -49,6 +50,8 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
         datosSensor      = findViewById(R.id.datosSensor);
         notaSegundoPlano = findViewById(R.id.notaSegundoPlano);
         tarjetaCuidador  = findViewById(R.id.tarjetaCuidador);
+        tarjetaHistorial = findViewById(R.id.tarjetaHistorial);
+        statsHistorial   = findViewById(R.id.statsHistorial);
         estadoPaciente   = findViewById(R.id.estadoPaciente);
         infoPaciente     = findViewById(R.id.infoPaciente);
         pantallaAlerta   = findViewById(R.id.pantallaAlerta);
@@ -107,6 +110,8 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
             pintarModo();
         });
 
+        findViewById(R.id.btnExportar).setOnClickListener(v -> guardarHistorial());
+
         findViewById(R.id.btnCompartir).setOnClickListener(v -> {
             String sala = campoSala.getText().toString().trim();
             if (sala.isEmpty()) sala = ajustes.getSala();
@@ -144,7 +149,10 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
         boolean brz = ajustes.esBrazalete();
         titulo.setText(brz ? "Brazalete" : "Panel del cuidador");
         tarjetaCuidador.setVisibility(brz ? View.GONE : View.VISIBLE);
-        btnVigilar.setVisibility(brz ? View.VISIBLE : View.GONE);
+        tarjetaHistorial.setVisibility(brz ? View.GONE : View.VISIBLE);
+        // El boton se queda en los dos modos: en cuidador enciende la escucha
+        // en segundo plano, que es lo que hace que suene con el movil guardado.
+        btnVigilar.setVisibility(View.VISIBLE);
         findViewById(R.id.btnDemo).setVisibility(brz ? View.VISIBLE : View.GONE);
     }
 
@@ -155,8 +163,14 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
             subestado.setText((e.vigilando ? "Vigilando" : "Detenido")
                     + "  ·  " + (e.conectado ? "Sala " + ajustes.getSala() : "Conectando..."));
 
-            estadoVig.setText(e.vigilando ? "Activa" : "Detenida");
-            btnVigilar.setText(e.vigilando ? "Detener vigilancia" : "Iniciar vigilancia");
+            boolean brz = ajustes.esBrazalete();
+            estadoVig.setText(e.vigilando ? (brz ? "Activa" : "Escuchando") : "Detenida");
+            btnVigilar.setText(e.vigilando
+                    ? (brz ? "Detener vigilancia" : "Desactivar avisos")
+                    : (brz ? "Iniciar vigilancia"  : "Activar avisos"));
+            notaSegundoPlano.setText(brz
+                    ? "Funciona con la pantalla apagada y con otras apps abiertas."
+                    : "Recibiras el aviso aunque tengas el telefono guardado y bloqueado.");
             notaSegundoPlano.setVisibility(e.vigilando ? View.VISIBLE : View.GONE);
 
             if (e.hz > 0) {
@@ -179,10 +193,37 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
                     estadoPaciente.setText("Todo normal");
                     estadoPaciente.setTextColor(getColor(R.color.verde));
                 }
-                infoPaciente.setText(e.ultimoRemoto == 0
-                        ? "Esperando al brazalete. Comprueba que el otro telefono use la misma sala."
-                        : "Ultimo aviso hace "
-                          + (System.currentTimeMillis() - e.ultimoRemoto) / 1000 + " s.");
+                if (e.ultimoRemoto == 0) {
+                    infoPaciente.setText("Esperando al brazalete. Comprueba que el otro "
+                            + "telefono use la misma sala.");
+                } else {
+                    long seg = (System.currentTimeMillis() - e.ultimoRemoto) / 1000;
+                    StringBuilder sb = new StringBuilder();
+                    sb.append("Ultimo dato hace ").append(seg).append(" s");
+                    if (e.batPaciente >= 0) sb.append("   ·   Bateria ").append(e.batPaciente).append('%');
+                    if (e.hzPaciente > 0)   sb.append("   ·   ").append(e.hzPaciente).append(" Hz");
+                    if (e.pausaRemota) sb.append("\nVIGILANCIA PAUSADA: el paciente cambio de app.");
+                    else if (seg > 45) sb.append("\nSIN SEÑAL: no se estan detectando caidas.");
+                    infoPaciente.setText(sb.toString());
+                }
+
+                // El historial vive en ESTE telefono: el del cuidador esta
+                // siempre escuchando, asi que hace de archivo sin servidor.
+                if (e.registros == 0) {
+                    statsHistorial.setText("Sin registros todavia.");
+                } else {
+                    String desde = new java.text.SimpleDateFormat("d MMM HH:mm",
+                            new java.util.Locale("es")).format(new java.util.Date(e.desde));
+                    statsHistorial.setText(
+                            "Registrando desde el " + desde + "\n"
+                          + e.registros + " registros guardados\n"
+                          + "Alertas: " + e.totalAlertas
+                          + "  (" + e.totalConfirmadas + " confirmadas, "
+                          + e.totalCanceladas + " canceladas)\n"
+                          + (e.porcentajeVigilancia >= 0
+                             ? "Vigilancia activa el " + e.porcentajeVigilancia + "% del tiempo"
+                             : ""));
+                }
             }
 
             if (e.alerta.isEmpty()) {
@@ -201,6 +242,40 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
                 alertaDatos.setText(e.datosAlerta.replace(";", "   "));
             }
         });
+    }
+
+    /** Escribe el historial como CSV en la carpeta Descargas del telefono. */
+    private void guardarHistorial() {
+        ServicioVigilancia s = ServicioVigilancia.get();
+        if (s == null) {
+            Toast.makeText(this, "El servicio no esta activo", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String csv = s.historialCsv();
+        String nombre = "historial_" + ajustes.getSala() + "_"
+                + new java.text.SimpleDateFormat("yyyyMMdd_HHmm", java.util.Locale.US)
+                        .format(new java.util.Date()) + ".csv";
+        try {
+            if (Build.VERSION.SDK_INT >= 29) {
+                android.content.ContentValues v = new android.content.ContentValues();
+                v.put(android.provider.MediaStore.Downloads.DISPLAY_NAME, nombre);
+                v.put(android.provider.MediaStore.Downloads.MIME_TYPE, "text/csv");
+                Uri destino = getContentResolver().insert(
+                        android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+                java.io.OutputStream os = getContentResolver().openOutputStream(destino);
+                os.write(csv.getBytes("UTF-8"));
+                os.close();
+            } else {
+                java.io.File f = new java.io.File(getExternalFilesDir(null), nombre);
+                java.io.FileOutputStream fo = new java.io.FileOutputStream(f);
+                fo.write(csv.getBytes("UTF-8"));
+                fo.close();
+            }
+            Toast.makeText(this, "Guardado en Descargas: " + nombre, Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "No se pudo guardar: " + e.getMessage(),
+                    Toast.LENGTH_LONG).show();
+        }
     }
 
     // ------------------------------------------------------------------

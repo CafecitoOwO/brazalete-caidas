@@ -123,11 +123,14 @@ video{display:none}
   Instalar la app en este telefono</button>
 
 <div class="card" id="cardApk" style="border-color:#2f6b3f">
-  <div class="etq" style="color:#4ade80">App de Android &mdash; para el paciente</div>
-  <div class="prog">Esta pagina deja de vigilar si bloqueas la pantalla o cambias de app:
-    es un limite del navegador. La app de Android <b>sigue vigilando siempre</b>, muestrea al
-    doble de velocidad y su aviso despierta el telefono aunque este bloqueado.<br><br>
-    El <b>cuidador</b> no necesita instalarla: con esta pagina le basta.</div>
+  <div class="etq" style="color:#4ade80">App de Android &mdash; instalenla los dos</div>
+  <div class="prog">Esta pagina deja de funcionar en cuanto bloqueas la pantalla o cambias
+    de app: es un limite del navegador.<br><br>
+    <b>El paciente</b> la necesita para seguir vigilando con el telefono guardado.<br>
+    <b>El cuidador</b> tambien: si usa esta pagina, solo recibe avisos mientras la tenga
+    abierta y mirando. Con la app instalada le suena aunque tenga el telefono en el
+    bolsillo y bloqueado, y ademas <b>guarda el historial del paciente</b>.<br><br>
+    Esta pagina sirve para probar y para la demo, pero no para el uso real.</div>
   <div class="botones"><button class="sec" id="btnApk">Descargar la app de Android</button></div>
 </div>
 
@@ -188,6 +191,44 @@ video{display:none}
   <p class="aviso">Proyecto escolar. No es un dispositivo medico.</p>
 </div>
 
+<!-- ================= HISTORIAL ================= -->
+<div class="pag" id="pagHistorial">
+
+  <div class="card">
+    <div class="etq">Resumen del paciente</div>
+    <div class="prog" id="resumenPeriodo">Sin datos todavia.</div>
+  </div>
+
+  <div class="fila">
+    <div class="card">
+      <div class="etq">Alertas</div>
+      <div class="grande" id="statAlertas">0</div>
+      <div class="prog" id="statAlertasDet">ninguna</div>
+    </div>
+    <div class="card">
+      <div class="etq">Vigilancia</div>
+      <div class="grande" id="statUptime">--%</div>
+      <div class="prog">del tiempo registrado</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="etq">Bateria del paciente</div>
+    <canvas id="gHistBat"></canvas>
+    <div class="prog" id="infoBat">Se llena a medida que llegan datos.</div>
+  </div>
+
+  <div class="card">
+    <div class="etq">Historial de eventos</div>
+    <div id="listaHist"><div class="prog">Sin eventos registrados.</div></div>
+  </div>
+
+  <button class="sec" id="btnExportHist">Descargar historial.csv</button>
+  <div class="botones"><button class="sec" id="btnBorrarHist">Borrar historial</button></div>
+  <p class="aviso">El historial se guarda en este telefono. Tambien se recupera lo que
+    el paciente haya dejado publicado, aunque hayas tenido la app cerrada.</p>
+</div>
+
 <!-- ================= GRABAR ================= -->
 <div class="pag" id="pagGrabar">
   <div class="card">
@@ -219,6 +260,7 @@ video{display:none}
 
 <nav>
   <div class="sel" id="navMonitor"><i>&#9673;</i>Monitor</div>
+  <div id="navHistorial"><i>&#9202;</i>Historial</div>
   <div id="navGrabar"><i>&#9210;</i>Grabar</div>
 </nav>
 
@@ -474,7 +516,7 @@ function procesarEstado(msg,remoto,viejo){
   // Al saltar una alerta, este telefono averigua donde esta y lo manda.
   if(!remoto && !viejo &&
      (tipo==='PREALERTA'||tipo==='CAIDA_CONFIRMADA'||tipo==='SOS_MANUAL')) pedirUbicacion();
-  if(!remoto) publicarEvento(tipo,datos);
+  if(!remoto){ anotarEvento(tipo,datos); publicarEvento(tipo,datos); }
 }
 
 // ---------------- sensores del telefono ----------------
@@ -868,6 +910,7 @@ function conectarNube(){
     if(!esBrazalete()){
       mqttCli.subscribe(tema('vitales'));
       mqttCli.subscribe(tema('ubicacion'));
+      mqttCli.subscribe(tema('historial'));
       log('Conectado a la sala '+cfg.sala,'Esperando datos del paciente','verde');
     }
   });
@@ -883,6 +926,7 @@ function conectarNube(){
   mqttCli.on('message',function(t,payload){
     const txt=payload.toString();
     if(t===tema('evento')){ recibirEvento(txt); return; }
+    if(t===tema('historial')){ fusionarHistorial(txt); return; }
     if(t===tema('ubicacion')){
       try{ ultimaUbic=JSON.parse(txt); pintarMapa();
         log('Ubicacion del paciente recibida','Precision '+ultimaUbic.acc+' m'); }catch(e){}
@@ -897,6 +941,7 @@ function conectarNube(){
       $('txtVig').textContent = d.pausa ? 'Pausada (otra app)'
                                         : (d.vig?'Activa (remota)':'Detenida (remota)');
       $('hz').textContent=(d.hz||0)+' Hz';
+      anotarMuestra(d.bat, d.vig && !d.pausa, d.hz);
       pintarPanelCuidador();
     }catch(e){}
   });
@@ -923,6 +968,7 @@ function recibirEvento(txt){
   }
   if(!tipo) return;
   if(de===MI_ID) return;   // eco de nuestro propio mensaje
+  anotarEvento(tipo,datos,ts);
   const viejo = ts && (Date.now()-ts > 300000);
   procesarEstado(tipo+(datos?';'+datos:''), true, viejo);
 }
@@ -981,6 +1027,8 @@ function enviarVitales(){
   const pausa = document.visibilityState==='hidden';
   publicar('vitales',JSON.stringify({bpm:isNaN(b)?0:b,bat:isNaN(p)?0:p,
     vig:vigilando,pausa:pausa,hz:hzActual,t:Date.now()}));
+  // El paciente tambien guarda su propio historial.
+  anotarMuestra(isNaN(p)?0:p, vigilando && !pausa, hzActual);
 }
 setInterval(enviarVitales,3000);
 setInterval(function(){
@@ -1017,6 +1065,130 @@ async function conectarBLE(){
     if(e.name!=='NotFoundError') log('Error de Bluetooth',String(e.message||e),'rojo');
   }
 }
+
+// ---------------- historial ----------------
+// No hace falta un servidor propio. Cada telefono guarda lo que ve, y
+// ademas el paciente deja su lista de eventos publicada como mensaje
+// "retenido" en el broker: cuando el cuidador abre la app, el broker se la
+// entrega aunque haya estado cerrada. El broker hace de archivo.
+const CLAVE_HIST='hist_'+cfg.sala;
+let hist=[];
+try{ hist=JSON.parse(localStorage.getItem(CLAVE_HIST)||'[]'); }catch(e){ hist=[]; }
+let tUltimaMuestra=0;
+
+function guardarHist(){
+  if(hist.length>1500) hist=hist.slice(-1500);
+  try{ localStorage.setItem(CLAVE_HIST,JSON.stringify(hist)); }catch(e){}
+}
+function anotarEvento(tipo,datos,ts){
+  const t=ts||Date.now();
+  // Evitar duplicados: el mismo tipo en el mismo segundo ya esta anotado.
+  if(hist.some(function(x){ return x.k==='ev' && x.tipo===tipo && Math.abs(x.t-t)<1500; })) return;
+  hist.push({k:'ev',t:t,tipo:tipo,datos:datos||''});
+  guardarHist(); pintarHistorial();
+  if(esBrazalete()) publicarHistorial();
+}
+function anotarMuestra(bat,vig,hz){
+  const t=Date.now();
+  if(t-tUltimaMuestra<60000) return;      // una muestra por minuto basta
+  tUltimaMuestra=t;
+  hist.push({k:'m',t:t,bat:bat,vig:vig?1:0,hz:hz||0});
+  guardarHist(); pintarHistorial();
+}
+function publicarHistorial(){
+  if(!mqttCli||!mqttCli.connected||!esBrazalete()) return;
+  const evs=hist.filter(function(x){return x.k==='ev';}).slice(-60);
+  mqttCli.publish(tema('historial'),JSON.stringify({evs:evs}),{retain:true});
+}
+function fusionarHistorial(txt){
+  try{
+    const d=JSON.parse(txt);
+    if(!d.evs) return;
+    let nuevos=0;
+    d.evs.forEach(function(e){
+      if(!hist.some(function(x){ return x.k==='ev' && x.tipo===e.tipo && Math.abs(x.t-e.t)<1500; })){
+        hist.push({k:'ev',t:e.t,tipo:e.tipo,datos:e.datos||''});
+        nuevos++;
+      }
+    });
+    if(nuevos){
+      hist.sort(function(a,b){return a.t-b.t;});
+      guardarHist(); pintarHistorial();
+      log('Historial recuperado',nuevos+' eventos anteriores del paciente');
+    }
+  }catch(e){}
+}
+
+const NOMBRE_EV={PREALERTA:'Posible caida',CAIDA_CONFIRMADA:'Caida confirmada',
+                 SOS_MANUAL:'SOS manual',CANCELADA:'Alerta cancelada'};
+function pintarHistorial(){
+  if(!$('listaHist')) return;
+  const evs=hist.filter(function(x){return x.k==='ev';});
+  const ms =hist.filter(function(x){return x.k==='m';});
+
+  const pre=evs.filter(function(e){return e.tipo==='PREALERTA';}).length;
+  const conf=evs.filter(function(e){return e.tipo==='CAIDA_CONFIRMADA';}).length;
+  const canc=evs.filter(function(e){return e.tipo==='CANCELADA';}).length;
+  $('statAlertas').textContent=pre+conf;
+  $('statAlertasDet').textContent = (pre+conf)===0 ? 'ninguna'
+      : conf+' confirmadas, '+canc+' canceladas';
+
+  if(ms.length){
+    const act=ms.filter(function(m){return m.vig;}).length;
+    $('statUptime').textContent=Math.round(act/ms.length*100)+'%';
+  }
+
+  if(hist.length){
+    const ini=new Date(hist[0].t), fin=new Date(hist[hist.length-1].t);
+    const horas=((fin-ini)/3600000);
+    $('resumenPeriodo').innerHTML='Desde <b>'+ini.toLocaleString()+'</b><br>'+
+      'hasta <b>'+fin.toLocaleString()+'</b><br>'+
+      'Periodo registrado: <b>'+(horas<1?Math.round(horas*60)+' min':horas.toFixed(1)+' h')+'</b> &nbsp;·&nbsp; '+
+      '<b>'+hist.length+'</b> registros';
+  }
+
+  const bats=ms.map(function(m){return m.bat;}).filter(function(b){return b>0;});
+  if(bats.length>1){
+    linea('gHistBat',bats.slice(-200),'#4ade80');
+    $('infoBat').textContent='De '+Math.min.apply(null,bats)+'% a '+
+      Math.max.apply(null,bats)+'%, en '+bats.length+' medidas.';
+  }
+
+  const c=$('listaHist');
+  if(!evs.length){ c.innerHTML='<div class="prog">Sin eventos registrados.</div>'; return; }
+  c.innerHTML='';
+  evs.slice().reverse().slice(0,80).forEach(function(e){
+    const d=new Date(e.t);
+    const clase = e.tipo==='CAIDA_CONFIRMADA'||e.tipo==='SOS_MANUAL' ? 'rojo'
+                : e.tipo==='PREALERTA' ? 'ambar' : 'verde';
+    const el=document.createElement('div');
+    el.className='ev '+clase;
+    el.innerHTML='<time>'+d.toLocaleDateString()+'<br>'+
+      d.toLocaleTimeString().slice(0,5)+'</time><div><b>'+
+      (NOMBRE_EV[e.tipo]||e.tipo)+'</b>'+(e.datos?'<small>'+e.datos+'</small>':'')+'</div>';
+    c.appendChild(el);
+  });
+}
+
+$('btnExportHist').onclick=function(){
+  if(!hist.length){ alert('No hay historial que descargar.'); return; }
+  let txt='fecha_hora,tipo,evento,bateria,vigilando,hz,datos\n';
+  hist.forEach(function(x){
+    const f=new Date(x.t).toISOString();
+    if(x.k==='ev') txt+=f+',evento,'+x.tipo+',,,,"'+(x.datos||'')+'"\n';
+    else           txt+=f+',muestra,,'+x.bat+','+x.vig+','+x.hz+',\n';
+  });
+  const b=new Blob([txt],{type:'text/csv'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(b); a.download='historial.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function(){URL.revokeObjectURL(a.href);},3000);
+};
+$('btnBorrarHist').onclick=function(){
+  if(confirm('Se borra el historial guardado en este telefono. Lo descargaste?')){
+    hist=[]; guardarHist(); pintarHistorial();
+  }
+};
 
 // ---------------- ajustes ----------------
 const CAMPOS=[['uImpacto','impactoG'],['uFuerte','fuerteG'],['uLibre','libreG'],
@@ -1068,11 +1240,15 @@ $('btnGuardar').onclick=function(){
 // ---------------- navegacion y botones ----------------
 function ir(p){
   $('pagMonitor').classList.toggle('ver',p==='m');
+  $('pagHistorial').classList.toggle('ver',p==='h');
   $('pagGrabar').classList.toggle('ver',p==='g');
   $('navMonitor').classList.toggle('sel',p==='m');
+  $('navHistorial').classList.toggle('sel',p==='h');
   $('navGrabar').classList.toggle('sel',p==='g');
+  if(p==='h') pintarHistorial();
 }
 $('navMonitor').onclick=function(){ir('m');};
+$('navHistorial').onclick=function(){ir('h');};
 $('navGrabar').onclick=function(){ir('g');};
 $('btnVigilar').onclick=alternarVigilancia;
 $('btnGrabar').onclick=alternarGrabacion;
@@ -1083,7 +1259,7 @@ $('btnVaciar').onclick=function(){
   }
 };
 $('btnApk').onclick=function(){
-  location.href='https://github.com/CafecitoOwO/brazalete-caidas/releases/download/v1.0/brazalete-v1.0.apk';
+  location.href='https://github.com/CafecitoOwO/brazalete-caidas/releases/download/v1.1/brazalete-v1.1.apk';
 };
 $('btnPulso').onclick=medirPulso;
 $('btnBLE').onclick=conectarBLE;
@@ -1110,10 +1286,15 @@ function aplicarModo(){
   $('titulo').textContent=esBrazalete()?'Brazalete':'Panel del cuidador';
   ['btnVigilar','btnDemo','btnBLE','btnPulso'].forEach(function(b){
     $(b).style.display=esBrazalete()?'':'none'; });
+  // Separacion de funciones: grabar datasets y descargar el APK son cosa
+  // del paciente; el cuidador solo vigila y consulta el historial.
   $('navGrabar').style.display=esBrazalete()?'':'none';
+  $('cardApk').style.display=esBrazalete()?'':'none';
+  $('navMonitor').lastChild.textContent=esBrazalete()?'Monitor':'Estado';
   $('btnEstoyBien').textContent=esBrazalete()?'Estoy bien, cancelar':'Descartar aviso';
   if(!esBrazalete()) ir('m');
   pintarPanelCuidador();
+  pintarHistorial();
 }
 
 // ---------------- panel del cuidador ----------------

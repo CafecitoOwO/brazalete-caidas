@@ -74,6 +74,17 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         public int     segundosRestantes = 0;
         public String  estadoPaciente = "ok";
         public long    ultimoRemoto = 0;
+        // Lo que llega del paciente (solo en modo cuidador)
+        public int     batPaciente = -1;
+        public int     hzPaciente = 0;
+        public boolean pausaRemota = false;
+        // Estadisticas del historial guardado en ESTE telefono
+        public int     totalAlertas = 0;
+        public int     totalConfirmadas = 0;
+        public int     totalCanceladas = 0;
+        public int     porcentajeVigilancia = -1;
+        public long    desde = 0;
+        public int     registros = 0;
     }
 
     private static ServicioVigilancia instancia;
@@ -98,6 +109,12 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
     private final Handler hilo = new Handler(Looper.getMainLooper());
     private final float[] ultimoGiro = {0, 0, 0};
 
+    /** Eventos guardados, en JSON, para publicarlos como historial. */
+    private final java.util.List<String> historial = new java.util.ArrayList<>();
+    // Salto de linea: JSONObject siempre lo escapa como \n dentro del texto,
+    // asi que nunca aparece crudo y sirve de separador sin partir un evento.
+    private static final String SEP = "\n";
+
     private long tCuenta = 0;
     private int nMuestras = 0;
     private long tVentana = 0;
@@ -118,6 +135,12 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         vibrador     = (Vibrator) getSystemService(VIBRATOR_SERVICE);
 
         crearCanales();
+
+        String guardado = ajustes.getHistorial();
+        if (!guardado.isEmpty()) {
+            for (String e : guardado.split(SEP)) if (!e.isEmpty()) historial.add(e);
+            recalcularEstadisticas();
+        }
 
         nube = new Nube(this);
         nube.configurar(ajustes.getSala(), ajustes.esBrazalete());
@@ -155,8 +178,11 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
     private void iniciarVigilancia() {
         if (estado.vigilando) return;
         if (!ajustes.esBrazalete()) {
-            // El cuidador no lee sensores; solo escucha.
-            estado.vigilando = false;
+            // El cuidador no lee sensores, pero el servicio TIENE que seguir
+            // vivo igual: es lo que mantiene la conexion abierta con el
+            // telefono en el bolsillo. Sin esto solo habria avisos mientras
+            // mirase la pantalla, que es justo cuando no hacen falta.
+            estado.vigilando = true;
             avisar();
             return;
         }
@@ -241,6 +267,7 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         notificarAlerta(confirmada, datos);
         if (propia) {
             nube.enviarEvento(tipo, datos);
+            anotarHistorial(tipo, datos);
             pedirUbicacion();
         }
         avisar();
@@ -256,7 +283,7 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         pararAlarma();
         NotificationManager nm = getSystemService(NotificationManager.class);
         nm.cancel(ID_NOTIF_ALERTA);
-        if (propia) nube.enviarEvento("CANCELADA", "");
+        if (propia) { nube.enviarEvento("CANCELADA", ""); anotarHistorial("CANCELADA", ""); }
         avisar();
     }
 
@@ -355,7 +382,117 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
     @Override public void alConectar(boolean conectado, String servidor) {
         estado.conectado = conectado;
         estado.servidor = servidor;
+        // Al reconectar se vuelve a dejar el historial publicado, por si el
+        // broker perdio el mensaje retenido.
+        if (conectado && !historial.isEmpty()) nube.enviarHistorial(historial);
         avisar();
+    }
+
+    @Override public void alVitales(int bpm, int bateria, boolean vigilando,
+                                    boolean pausa, int hz) {
+        estado.ultimoRemoto = System.currentTimeMillis();
+        estado.batPaciente = bateria;
+        estado.hzPaciente = hz;
+        estado.pausaRemota = pausa;
+        anotarMuestra(bateria, vigilando && !pausa, hz);
+        avisar();
+    }
+
+    /** Anota un evento y lo deja publicado para el cuidador. */
+    private void anotarHistorial(String tipo, String datos) {
+        try {
+            org.json.JSONObject j = new org.json.JSONObject();
+            j.put("k", "ev");
+            j.put("t", System.currentTimeMillis());
+            j.put("tipo", tipo);
+            j.put("datos", datos == null ? "" : datos);
+            agregarAlHistorial(j.toString());
+            nube.enviarHistorial(soloEventos());
+        } catch (Exception ignored) { }
+    }
+
+    /**
+     * Guarda una medida periodica del paciente.
+     *
+     * Este es el archivo de verdad: el telefono del cuidador esta siempre
+     * escuchando, asi que puede quedarse con todo el historial sin que haga
+     * falta ningun servidor.
+     */
+    private long tUltimaMuestra = 0;
+    private void anotarMuestra(int bateria, boolean vigilando, int hz) {
+        long ahora = System.currentTimeMillis();
+        if (ahora - tUltimaMuestra < 60000) return;   // una por minuto basta
+        tUltimaMuestra = ahora;
+        try {
+            org.json.JSONObject j = new org.json.JSONObject();
+            j.put("k", "m");
+            j.put("t", ahora);
+            j.put("bat", bateria);
+            j.put("vig", vigilando ? 1 : 0);
+            j.put("hz", hz);
+            agregarAlHistorial(j.toString());
+        } catch (Exception ignored) { }
+    }
+
+    private void agregarAlHistorial(String json) {
+        historial.add(json);
+        while (historial.size() > 1500) historial.remove(0);
+        ajustes.setHistorial(android.text.TextUtils.join(SEP, historial));
+        recalcularEstadisticas();
+    }
+
+    /** Solo los eventos, que es lo unico que se publica al broker. */
+    private java.util.List<String> soloEventos() {
+        java.util.List<String> evs = new java.util.ArrayList<>();
+        for (String s : historial) if (s.contains("\"k\":\"ev\"")) evs.add(s);
+        return evs;
+    }
+
+    private void recalcularEstadisticas() {
+        int pre = 0, conf = 0, canc = 0, muestras = 0, activas = 0;
+        long primera = 0;
+        for (String s : historial) {
+            try {
+                org.json.JSONObject j = new org.json.JSONObject(s);
+                if (primera == 0) primera = j.optLong("t");
+                if ("ev".equals(j.optString("k"))) {
+                    String t = j.optString("tipo");
+                    if (t.equals("PREALERTA")) pre++;
+                    else if (t.equals("CAIDA_CONFIRMADA") || t.equals("SOS_MANUAL")) conf++;
+                    else if (t.equals("CANCELADA")) canc++;
+                } else {
+                    muestras++;
+                    if (j.optInt("vig") == 1) activas++;
+                }
+            } catch (Exception ignored) { }
+        }
+        estado.totalAlertas = pre + conf;
+        estado.totalConfirmadas = conf;
+        estado.totalCanceladas = canc;
+        estado.porcentajeVigilancia = muestras > 0 ? Math.round(activas * 100f / muestras) : -1;
+        estado.desde = primera;
+        estado.registros = historial.size();
+    }
+
+    /** Historial completo en CSV, para compartirlo o guardarlo. */
+    public String historialCsv() {
+        StringBuilder sb = new StringBuilder("fecha_hora,tipo,evento,bateria,vigilando,hz,datos\n");
+        java.text.SimpleDateFormat f =
+                new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US);
+        for (String s : historial) {
+            try {
+                org.json.JSONObject j = new org.json.JSONObject(s);
+                String fecha = f.format(new java.util.Date(j.optLong("t")));
+                if ("ev".equals(j.optString("k"))) {
+                    sb.append(fecha).append(",evento,").append(j.optString("tipo"))
+                      .append(",,,,\"").append(j.optString("datos")).append("\"\n");
+                } else {
+                    sb.append(fecha).append(",muestra,,").append(j.optInt("bat")).append(',')
+                      .append(j.optInt("vig")).append(',').append(j.optInt("hz")).append(",\n");
+                }
+            } catch (Exception ignored) { }
+        }
+        return sb.toString();
     }
 
     @Override public void alEvento(String tipo, String datos, boolean viejo) {
