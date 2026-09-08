@@ -162,7 +162,45 @@ Esta decisión es deliberada y asimétrica:
 
 Por eso el sistema está calibrado para pecar de sensible.
 
-### 4.5. Configuración del sensor
+### 4.5. Calibración automática por persona
+
+Un umbral fijo de quietud es una simplificación que perjudica precisamente
+a quien más necesita el sistema. Una persona con temblor esencial, o con
+respiración marcada, **nunca alcanza la quietud que espera un umbral
+rígido**, y su caída no se detectaría jamás. En el extremo opuesto, alguien
+muy estático haría saltar la alarma con cualquier tropiezo leve.
+
+La aplicación resuelve esto midiendo cuánto se mueve **esa persona
+concreta** cuando está parada. Durante los periodos en que el detector está
+en reposo, acumula muestras y calcula la media de la desviación de
+aceleración y de la velocidad angular. El umbral de quietud pasa a
+definirse de forma relativa:
+
+```
+tolerancia = 3 × ruido_propio + margen     (acotado entre 0,08 y 0,35 g)
+giro       = 3 × giro_propio  + margen     (acotado entre 12 y 80 °/s)
+```
+
+Es también el punto donde **acelerómetro y giroscopio cooperan**: para dar
+un instante por «quieto» tienen que estar tranquilos los dos a la vez. Un
+sensor solo se deja engañar; los dos juntos, mucho menos.
+
+En una prueba con 600 muestras de reposo simulado, el sistema aprendió un
+umbral de **0,085 g y 18 °/s**, frente a los 0,18 g y 35 °/s fijos por
+defecto: menos de la mitad, es decir, un detector notablemente más
+sensible para ese usuario concreto.
+
+### 4.6. Aviso de último minuto
+
+Una alerta confirmada que nadie atiende es el peor escenario posible: el
+sistema hizo bien su trabajo y la persona sigue igualmente en el suelo.
+
+Por eso, pasado un margen configurable sin que nadie cancele, el sistema
+**vuelve a insistir**: reanuda la alarma y emite un nuevo aviso indicando
+cuánto tiempo lleva la alerta desatendida. Y sigue insistiendo, con el
+contador acumulándose, hasta que alguien responda.
+
+### 4.7. Configuración del sensor
 
 Un detalle que invalida silenciosamente todo el algoritmo si se pasa por
 alto: los acelerómetros arrancan por defecto en un rango de ±2 g. **Un

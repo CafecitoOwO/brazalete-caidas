@@ -54,7 +54,8 @@ const cfg = {
   tgToken:   leer('tgToken', ''),
   tgChat:    leer('tgChat', ''),
   avisos:    Object.assign(
-               { auto: true, sonido: true, vibrar: true, ubicacion: true, cuentaS: 25 },
+               { auto: true, sonido: true, vibrar: true, ubicacion: true,
+                 cuentaS: 25, escalarS: 60, autocal: true },
                leer('avisos', {}))
 };
 escribir('sala', cfg.sala);
@@ -103,6 +104,7 @@ const estados = {};
 let salaActual = null;          // sala abierta en la pantalla de detalle
 let alertaDe = null;            // sala que disparo la alerta en curso
 let ultimaUbic = null;
+let tEscalada = null;           // temporizador del aviso de ultimo minuto
 
 function nombreDe(sala) {
   if (sala === cfg.sala) return cfg.nombre || 'Yo';
@@ -269,6 +271,34 @@ function mostrarAlerta(tipo, datos, sala) {
   $('btnEstoyBien').textContent = quien ? 'Descartar aviso' : 'Estoy bien, cancelar';
   pintarMapa();
 }
+/**
+ * Aviso de ultimo minuto.
+ *
+ * Una alerta confirmada que nadie atiende es el peor escenario: el
+ * sistema hizo su trabajo y aun asi la persona sigue en el suelo. Pasado
+ * un margen sin que nadie cancele, se vuelve a insistir: se reanuda la
+ * alarma y se manda un segundo aviso diciendo cuanto tiempo lleva.
+ */
+function programarEscalada(sala, datos, prueba, desde) {
+  clearTimeout(tEscalada);
+  if (prueba || !cfg.avisos.escalarS) return;
+  // El inicio se arrastra entre insistencias para poder decir cuanto
+  // tiempo lleva de verdad, no solo desde el ultimo aviso.
+  const inicio = desde || Date.now();
+  tEscalada = setTimeout(function () {
+    if (estadoDe(sala).estado !== 'caida') return;   // ya lo atendieron
+    const seg = Math.round((Date.now() - inicio) / 1000);
+    const cuanto = seg < 90 ? seg + ' segundos' : Math.round(seg / 60) + ' minutos';
+    const quien = sala === cfg.sala ? '' : ' de ' + nombreDe(sala);
+    log('SIN RESPUESTA' + quien, 'La alerta lleva ' + cuanto + ' sin atender', 'rojo');
+    avisarTelegram('SIN RESPUESTA' + quien + '. La alerta lleva ' + cuanto +
+      ' sin que nadie la atienda.' + (datos ? ' ' + datos : ''));
+    sonar(true);
+    // Y se sigue insistiendo mientras no la cancelen.
+    programarEscalada(sala, datos, false, inicio);
+  }, cfg.avisos.escalarS * 1000);
+}
+
 function cerrarAlerta() {
   $('alerta').className = '';
   clearInterval(cuentaAtras);
@@ -301,13 +331,16 @@ function procesarEstado(msg, remoto, sala, viejo, prueba) {
     log('Caida confirmada' + suf + marca, datos, 'rojo');
     if (alarmar) mostrarAlerta('conf', datos, sala);
     if (!remoto && !prueba) avisarTelegram('CAIDA CONFIRMADA. ' + datos);
+    programarEscalada(sala, datos, prueba);
   } else if (tipo === 'SOS_MANUAL') {
     e.estado = 'caida';
     log('SOS manual' + suf + marca, '', 'rojo');
     if (alarmar) mostrarAlerta('conf', '', sala);
     if (!remoto && !prueba) avisarTelegram('SOS manual.');
+    programarEscalada(sala, '', prueba);
   } else if (tipo === 'CANCELADA') {
     e.estado = 'ok';
+    clearTimeout(tEscalada); tEscalada = null;
     log('Alerta cancelada' + suf, 'Falso positivo descartado', 'verde');
     if (!alertaDe || alertaDe === sala) cerrarAlerta();
   } else {
@@ -331,6 +364,42 @@ function procesarEstado(msg, remoto, sala, viejo, prueba) {
 /* ================================================================
    Sensores del telefono
    ================================================================ */
+
+/* ----------------------------------------------------------------
+   Calibracion automatica
+   ----------------------------------------------------------------
+   No todo el mundo se queda igual de quieto. Una persona con temblor,
+   o que respira fuerte, nunca llega a la quietud que espera un umbral
+   fijo, y su caida no se detecta jamas. Al reves, alguien muy quieto
+   haria saltar la alarma con cualquier tropiezo.
+
+   Asi que en vez de fijar "quieto = menos de 0,18 g", se mide cuanto se
+   mueve ESTA persona cuando esta parada, y se define la quietud
+   relativa a ella. Es donde el acelerometro y el giroscopio cooperan:
+   hace falta que los dos esten tranquilos para dar el reposo por bueno.
+   ---------------------------------------------------------------- */
+
+const cal = { n: 0, sumDesv: 0, sumGiro: 0, listo: false, tolG: 0, giro: 0 };
+
+function calibrar(m) {
+  if (!cfg.avisos.autocal || st.fase !== 'REPOSO') return;
+  const desv = Math.abs(m.svm - 1);
+  // Si se esta moviendo, la muestra no sirve para aprender el reposo.
+  if (desv > 0.35 || m.gyro > 120) return;
+
+  cal.n++; cal.sumDesv += desv; cal.sumGiro += m.gyro;
+  if (cal.n < 500 || cal.n % 250 !== 0) return;   // se refina cada pocos segundos
+
+  const mediaDesv = cal.sumDesv / cal.n;
+  const mediaGiro = cal.sumGiro / cal.n;
+  // Tres veces el ruido propio, mas un margen. Acotado para que una
+  // calibracion rara no deje el detector ciego ni histerico.
+  cal.tolG = Math.min(0.35, Math.max(0.08, mediaDesv * 3 + 0.04));
+  cal.giro = Math.min(80,   Math.max(12,   mediaGiro * 3 + 6));
+  cal.listo = true;
+  umb.quietoTolG = cal.tolG;
+  umb.quietoGiro = cal.giro;
+}
 
 function vectorEn(tObj) {
   let mejor = null, dif = 1e9;
@@ -378,6 +447,7 @@ function onMotion(e) {
   if (serieAcc.length > 140) serieAcc.shift();
 
   if (grabando) filas.push(m);
+  calibrar(m);
   detectar(m);
 }
 
@@ -1133,6 +1203,17 @@ function diagnostico() {
   l.push(('serviceWorker' in navigator && navigator.serviceWorker.controller ? '&#10003;' : '&#10007;') +
          ' Instalable / funciona sin internet');
   l.push((navigator.wakeLock ? '&#10003;' : '&#10007;') + ' Puede mantener la pantalla encendida');
+  l.push('');
+  if (cal.listo) {
+    l.push('&#10003; <b>Deteccion calibrada para esta persona</b>');
+    l.push('&nbsp;&nbsp;&nbsp;Quietud: ' + cal.tolG.toFixed(3) + ' g y ' +
+           Math.round(cal.giro) + ' dps, con ' + cal.n + ' muestras de reposo');
+  } else if (cfg.avisos.autocal) {
+    l.push('&#8230; Calibrando (' + cal.n + ' de 500 muestras de reposo). ' +
+           'Deja el telefono quieto un rato con la vigilancia activa.');
+  } else {
+    l.push('&#10007; Ajuste automatico desactivado: se usan los umbrales fijos');
+  }
   $('diagnostico').innerHTML = l.join('<br>');
 }
 
@@ -1195,6 +1276,8 @@ function abrirAjustes() {
   $('inTgToken').value = cfg.tgToken;
   $('inTgChat').value = cfg.tgChat;
   $('inCuenta').value = cfg.avisos.cuentaS;
+  $('inEscalar').value = cfg.avisos.escalarS;
+  $('chkAutocal').checked = cfg.avisos.autocal;
   $('chkAuto').checked = cfg.avisos.auto;
   $('chkSonido').checked = cfg.avisos.sonido;
   $('chkVibrar').checked = cfg.avisos.vibrar;
@@ -1220,6 +1303,8 @@ function guardarAjustes() {
   cfg.tgToken = $('inTgToken').value.trim();
   cfg.tgChat  = $('inTgChat').value.trim();
   cfg.avisos.cuentaS   = Math.max(5, Math.min(120, parseInt($('inCuenta').value, 10) || 25));
+  cfg.avisos.escalarS  = Math.max(0, Math.min(600, parseInt($('inEscalar').value, 10) || 0));
+  cfg.avisos.autocal   = $('chkAutocal').checked;
   cfg.avisos.auto      = $('chkAuto').checked;
   cfg.avisos.sonido    = $('chkSonido').checked;
   cfg.avisos.vibrar    = $('chkVibrar').checked;

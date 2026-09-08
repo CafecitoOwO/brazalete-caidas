@@ -339,8 +339,17 @@
       <small>Solo al saltar una alerta, nunca el resto del tiempo.</small></div>
     <input type="checkbox" id="chkUbicacion">
   </div>
+  <div class="interruptor">
+    <div class="txt"><b>Ajuste automatico de la deteccion</b>
+      <small>La app aprende cuanto se mueve esta persona cuando esta quieta y
+        adapta el umbral de quietud a ella. Sin esto, alguien con temblor podria
+        no ser detectado nunca.</small></div>
+    <input type="checkbox" id="chkAutocal">
+  </div>
   <label>Segundos para cancelar antes de dar la alarma por buena</label>
   <input id="inCuenta" type="number" min="5" max="120" step="5">
+  <label>Insistir si nadie atiende la alerta (segundos, 0 = no insistir)</label>
+  <input id="inEscalar" type="number" min="0" max="600" step="10">
   <label>Telefono de emergencias</label>
   <input id="inTel" placeholder="112">
 
