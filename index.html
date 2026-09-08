@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111417">
+<title>Brazalete</title>
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Brazalete">
+<link rel="apple-touch-icon" href="icono-192.png">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#111417;
+  color:#e8e6e1;min-height:100vh;padding:18px 16px calc(86px + env(safe-area-inset-bottom))}
+h1{font-size:19px;font-weight:600;letter-spacing:-.2px}
+.top{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.top h1{flex:1}
+.icono{width:36px;height:36px;border-radius:10px;background:#1d2227;border:1px solid #262b30;
+  display:flex;align-items:center;justify-content:center;font-size:17px;cursor:pointer;flex:none}
+.subtop{display:flex;align-items:center;gap:14px;margin-bottom:16px;font-size:13px;color:#8d8a83;flex-wrap:wrap}
+.estado{display:flex;align-items:center;gap:7px}
+.punto{width:9px;height:9px;border-radius:50%;background:#5a5751;flex:none}
+.punto.on{background:#4ade80;box-shadow:0 0 8px #4ade8099}
+.punto.nube.on{background:#60a5fa;box-shadow:0 0 8px #60a5fa99}
+
+.card{background:#191d21;border:1px solid #262b30;border-radius:14px;padding:18px;margin-bottom:12px}
+.etq{font-size:12px;color:#8d8a83;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px}
+.grande{font-size:27px;font-weight:600;font-variant-numeric:tabular-nums}
+.bpm{display:flex;align-items:baseline;gap:9px}
+.bpm b{font-size:52px;font-weight:600;line-height:1;font-variant-numeric:tabular-nums}
+.bpm span{font-size:15px;color:#8d8a83}
+.corazon{margin-left:auto;font-size:26px}
+.lat{animation:lat .9s ease-in-out infinite}
+@keyframes lat{0%,100%{transform:scale(1)}18%{transform:scale(1.28)}36%{transform:scale(1)}}
+canvas{width:100%;display:block;margin-top:12px;border-radius:6px}
+#gAcc{height:90px}#gPulso{height:70px}#gBpm{height:60px}
+.fila{display:flex;gap:12px}.fila .card{flex:1;margin-bottom:12px}
+.barra{height:6px;background:#262b30;border-radius:3px;overflow:hidden;margin-top:9px}
+.barra i{display:block;height:100%;background:#4ade80;border-radius:3px;transition:width .4s}
+
+button{width:100%;padding:15px;border:0;border-radius:12px;font-size:16px;font-weight:600;
+  background:#e8e6e1;color:#111417;cursor:pointer;font-family:inherit}
+button:active{opacity:.75}
+button.sec{background:#242a30;color:#c9c6bf;font-weight:500;font-size:14px;padding:12px}
+button.rojo{background:#dc2626;color:#fff}
+button:disabled{opacity:.4}
+.botones{display:flex;gap:10px;margin-top:4px}
+
+#log{max-height:230px;overflow-y:auto}
+.ev{display:flex;gap:11px;padding:9px 0;border-bottom:1px solid #22262b;font-size:14px}
+.ev:last-child{border-bottom:0}
+.ev time{color:#7d7a74;font-variant-numeric:tabular-nums;flex:none;font-size:13px;padding-top:1px}
+.ev b{font-weight:500}
+.ev.rojo b{color:#f87171}.ev.ambar b{color:#fbbf24}.ev.verde b{color:#4ade80}
+.ev small{display:block;color:#7d7a74;font-size:12px;margin-top:2px}
+
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.chip{padding:9px 13px;border-radius:20px;background:#191d21;border:1px solid #2c3238;
+  font-size:13px;cursor:pointer;color:#c9c6bf}
+.chip.sel{background:#e8e6e1;color:#111417;border-color:#e8e6e1;font-weight:600}
+.grab{display:flex;justify-content:space-between;align-items:center;padding:11px 0;
+  border-bottom:1px solid #22262b;font-size:14px;gap:10px}
+.grab:last-child{border-bottom:0}
+.grab small{color:#7d7a74;display:block;font-size:12px;margin-top:2px}
+.grab .x{color:#f87171;font-size:20px;cursor:pointer;padding:0 6px;flex:none}
+.prog{font-size:13px;color:#8d8a83;margin-top:10px;line-height:1.7}
+.prog b{color:#e8e6e1;font-variant-numeric:tabular-nums}
+
+nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:#161a1e;
+  border-top:1px solid #262b30;padding-bottom:env(safe-area-inset-bottom);z-index:50}
+nav div{flex:1;text-align:center;padding:13px 4px;font-size:12px;color:#7d7a74;cursor:pointer}
+nav div.sel{color:#e8e6e1}
+nav div i{display:block;font-size:19px;font-style:normal;margin-bottom:3px;opacity:.85}
+.pag{display:none}.pag.ver{display:block}
+
+#alerta{position:fixed;inset:0;z-index:99;display:none;flex-direction:column;
+  align-items:center;justify-content:center;text-align:center;padding:28px;gap:14px}
+#alerta.ver{display:flex}
+#alerta.pre{background:#7c4a06}
+#alerta.conf{background:#8a1c1c;animation:pulso 1s ease-in-out infinite}
+@keyframes pulso{0%,100%{background:#8a1c1c}50%{background:#b02222}}
+#alerta h2{font-size:29px;font-weight:700;letter-spacing:-.5px}
+#alerta p{font-size:16px;opacity:.9;max-width:340px;line-height:1.5}
+#cuenta{font-size:64px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
+#alerta .botones{max-width:340px;width:100%;flex-direction:column}
+#alerta button{background:#fff;color:#111}
+#alerta button.sec{background:rgba(255,255,255,.16);color:#fff}
+.datos{font-size:13px;opacity:.75;font-family:ui-monospace,monospace}
+
+#ajustes{position:fixed;inset:0;z-index:98;background:#111417;display:none;
+  overflow-y:auto;padding:22px 16px calc(30px + env(safe-area-inset-bottom))}
+#ajustes.ver{display:block}
+#ajustes h2{font-size:19px;font-weight:600;margin-bottom:6px}
+#ajustes h3{font-size:13px;color:#8d8a83;text-transform:uppercase;letter-spacing:.6px;
+  margin:26px 0 4px;padding-top:16px;border-top:1px solid #22262b}
+label{display:block;font-size:13px;color:#8d8a83;margin:14px 0 6px}
+input{width:100%;padding:12px;border-radius:10px;border:1px solid #2c3238;
+  background:#191d21;color:#e8e6e1;font-size:16px;font-family:inherit}
+.modos{display:flex;gap:8px;margin-top:6px}
+.modos div{flex:1;padding:12px;text-align:center;border-radius:10px;font-size:14px;
+  background:#191d21;border:1px solid #2c3238;cursor:pointer}
+.modos div.sel{background:#e8e6e1;color:#111417;font-weight:600;border-color:#e8e6e1}
+.dos{display:flex;gap:10px}.dos>div{flex:1}
+.nota{font-size:12px;color:#7d7a74;line-height:1.55;margin-top:8px}
+.aviso{font-size:12px;color:#7d7a74;line-height:1.5;text-align:center;margin:16px 0 4px}
+video{display:none}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <h1 id="titulo">Brazalete</h1>
+  <div class="icono" id="btnAjustes">&#9881;</div>
+</div>
+<div class="subtop">
+  <div class="estado"><i class="punto" id="punto"></i><span id="txtEstado">Detenido</span></div>
+  <div class="estado"><i class="punto nube" id="puntoNube"></i><span id="txtNube">Sin sala</span></div>
+</div>
+
+<button class="sec" id="btnInstalar" style="display:none;margin-bottom:14px">
+  Instalar la app en este telefono</button>
+
+<!-- ================= MONITOR ================= -->
+<div class="pag ver" id="pagMonitor">
+
+  <div class="card" id="cardCuidador" style="display:none">
+    <div class="etq">Estado del paciente</div>
+    <div class="grande" id="estPac">Sin datos</div>
+    <div class="prog" id="estPacInfo">Esperando el primer aviso del brazalete.</div>
+    <div class="botones"><button class="sec" id="btnMapaPanel" style="display:none">Ver ultima ubicacion</button></div>
+  </div>
+
+  <div class="card" id="cardAviso" style="display:none;border-color:#7c4a06;background:#2a1d09">
+    <div class="etq" style="color:#fbbf24">Atencion</div>
+    <div class="prog" id="txtAviso" style="color:#e8e6e1"></div>
+  </div>
+
+  <div class="card">
+    <div class="etq">Deteccion de caidas</div>
+    <div class="grande" id="txtVig">Detenida</div>
+    <canvas id="gAcc"></canvas>
+    <div class="prog" id="infoSensor">Sin datos del sensor</div>
+  </div>
+
+  <button id="btnVigilar">Iniciar vigilancia</button>
+  <div class="botones">
+    <button class="sec" id="btnDemo">Simular caida</button>
+    <button class="sec" id="btnBLE">Conectar brazalete</button>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <div class="etq">Ritmo cardiaco</div>
+    <div class="bpm"><b id="bpm">--</b><span>lpm</span><span class="corazon" id="corazon">&#9829;</span></div>
+    <canvas id="gPulso"></canvas>
+    <canvas id="gBpm"></canvas>
+    <div class="prog" id="infoPulso">Tapa la camara trasera con la yema del dedo y pulsa medir.</div>
+    <div class="botones"><button class="sec" id="btnPulso">Medir pulso (30 s)</button></div>
+  </div>
+
+  <div class="fila">
+    <div class="card">
+      <div class="etq">Bateria</div>
+      <div class="grande" id="bat">--%</div>
+      <div class="barra"><i id="barBat" style="width:0"></i></div>
+    </div>
+    <div class="card">
+      <div class="etq">Frecuencia</div>
+      <div class="grande" id="hz">-- Hz</div>
+      <div class="barra"><i id="barHz" style="width:0;background:#60a5fa"></i></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="etq">Eventos</div>
+    <div id="log"><div class="ev"><time>--:--</time><div>Sin eventos todavia</div></div></div>
+  </div>
+  <p class="aviso">Proyecto escolar. No es un dispositivo medico.</p>
+</div>
+
+<!-- ================= GRABAR ================= -->
+<div class="pag" id="pagGrabar">
+  <div class="card">
+    <div class="etq">Que vas a grabar</div>
+    <div class="chips" id="chips"></div>
+  </div>
+
+  <div class="card">
+    <div class="etq">Grabacion</div>
+    <div class="grande" id="crono">0.0 s</div>
+    <div class="prog" id="infoGrab">Sujeta el telefono al brazo, siempre igual. Pulsa grabar, haz el
+      movimiento, para. Las caidas: sobre un colchon.</div>
+  </div>
+  <button id="btnGrabar">Empezar a grabar</button>
+
+  <div class="card" style="margin-top:12px">
+    <div class="etq">Progreso del dataset</div>
+    <div class="prog" id="progreso"></div>
+  </div>
+
+  <div class="card">
+    <div class="etq">Grabaciones guardadas</div>
+    <div id="listaGrab"></div>
+  </div>
+
+  <button class="sec" id="btnExportar">Descargar dataset.csv</button>
+  <div class="botones"><button class="sec" id="btnVaciar">Borrar todas las grabaciones</button></div>
+</div>
+
+<nav>
+  <div class="sel" id="navMonitor"><i>&#9673;</i>Monitor</div>
+  <div id="navGrabar"><i>&#9210;</i>Grabar</div>
+</nav>
+
+<video id="video" playsinline muted></video>
+
+<div id="alerta">
+  <h2 id="alertaTit">Posible caida</h2>
+  <div id="cuenta">25</div>
+  <p id="alertaTxt">Si estas bien, cancela antes de que acabe la cuenta.</p>
+  <div class="datos" id="alertaDatos"></div>
+  <div class="botones">
+    <button id="btnEstoyBien">Estoy bien, cancelar</button>
+    <button class="sec" id="btnLlamar">Llamar a emergencias</button>
+    <button class="sec" id="btnMapa" style="display:none">Ver ubicacion en el mapa</button>
+  </div>
+</div>
+
+<div id="ajustes">
+  <h2>Ajustes</h2>
+
+  <h3>Modo</h3>
+  <div class="modos">
+    <div id="modoBraz">Brazalete</div>
+    <div id="modoCuid">Cuidador</div>
+  </div>
+  <p class="nota"><b>Brazalete</b>: el telefono de quien lo lleva. Detecta y reenvia.<br>
+    <b>Cuidador</b>: otro telefono, a cualquier distancia. Solo recibe.</p>
+
+  <h3>Conexion</h3>
+  <label>Codigo de sala</label>
+  <input id="inSala">
+  <p class="nota">Los dos telefonos, el mismo codigo. Cualquiera que lo sepa ve los datos.</p>
+  <div class="botones"><button class="sec" id="btnCompartir">Enviar enlace al cuidador</button></div>
+  <p class="nota">Manda el enlace por WhatsApp al telefono del cuidador. Al abrirlo se
+    configura solo, sin teclear nada.</p>
+  <label>Telefono de emergencias</label>
+  <input id="inTel" placeholder="112">
+  <label>Token del bot de Telegram (opcional)</label>
+  <input id="inTgToken" placeholder="123456:AAE...">
+  <label>Chat ID de Telegram (opcional)</label>
+  <input id="inTgChat" placeholder="-1001234567890">
+
+  <h3>Umbrales de deteccion</h3>
+  <p class="nota">Pega aqui los valores que te de el script de Python del dia 4.</p>
+  <div class="dos">
+    <div><label>Impacto (g)</label><input id="uImpacto" type="number" step="0.05"></div>
+    <div><label>Golpe fuerte (g)</label><input id="uFuerte" type="number" step="0.05"></div>
+  </div>
+  <div class="dos">
+    <div><label>Caida libre (g)</label><input id="uLibre" type="number" step="0.05"></div>
+    <div><label>Pico de giro (dps)</label><input id="uGiro" type="number" step="10"></div>
+  </div>
+  <div class="dos">
+    <div><label>Orientacion (grados)</label><input id="uOrient" type="number" step="5"></div>
+    <div><label>Quietud (ms)</label><input id="uQuieto" type="number" step="250"></div>
+  </div>
+  <div class="dos">
+    <div><label>Tolerancia quieto (g)</label><input id="uTol" type="number" step="0.01"></div>
+    <div><label>Puntos minimos</label><input id="uPuntos" type="number" step="1"></div>
+  </div>
+
+  <div class="botones" style="margin-top:22px"><button id="btnGuardar">Guardar</button></div>
+  <div class="botones"><button class="sec" id="btnRestaurar">Restaurar valores por defecto</button></div>
+  <div class="botones"><button class="sec" id="btnCerrarAjustes">Cancelar</button></div>
+</div>
+
+<script src="mqtt.min.js"></script>
+<script>
+// Si el archivo local faltase, se intenta desde un CDN. Asi la app nunca
+// se queda sin la libreria de conexion.
+if(typeof mqtt==='undefined'){
+  document.write('<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"><\/script>');
+}
+</script>
+<script>
+'use strict';
+const $=function(id){return document.getElementById(id);};
+// Tres brokers publicos. Si uno se cae el dia de la presentacion, la app
+// pasa sola al siguiente. Los dos telefonos acaban en el mismo porque
+// prueban en el mismo orden.
+const BROKERS=['wss://broker.emqx.io:8084/mqtt',
+               'wss://broker.hivemq.com:8884/mqtt',
+               'wss://test.mosquitto.org:8081/mqtt'];
+let iBroker=0, fallosBroker=0;
+// Identificador de este telefono. Sirve para ignorar los mensajes que
+// uno mismo publica y le devuelve el broker (si no, la cuenta atras se
+// reiniciaria sola nada mas empezar).
+const MI_ID=Math.random().toString(36).slice(2,10);
+const SRV_HR=0x180D, CH_HR=0x2A37, SRV_BAT=0x180F, CH_BAT=0x2A19;
+const SRV_PROP='b1a7f100-4c9e-4f2a-9a1c-1f0a5c7d3e01';
+const CH_EST  ='b1a7f100-4c9e-4f2a-9a1c-1f0a5c7d3e02';
+const G=9.80665;
+
+const UMB_DEF={impactoG:2.5,fuerteG:3.5,libreG:0.6,libreMs:60,giroDps:250,
+               orientDeg:50,quietoMs:2500,quietoTolG:0.18,quietoGiro:35,puntosMin:3};
+
+// ---------------- configuracion ----------------
+const cfg={
+  modo:    localStorage.getItem('modo')    || 'brazalete',
+  sala:    localStorage.getItem('sala')    || Math.random().toString(36).slice(2,10),
+  tel:     localStorage.getItem('tel')     || '112',
+  tgToken: localStorage.getItem('tgToken') || '',
+  tgChat:  localStorage.getItem('tgChat')  || ''
+};
+localStorage.setItem('sala',cfg.sala);
+
+// Emparejamiento por enlace: ...?sala=abc123&modo=cuidador
+// Asi el cuidador no tiene que teclear el codigo: abre el enlace y ya.
+const _par=new URLSearchParams(location.search);
+if(_par.get('sala')){
+  cfg.sala=_par.get('sala').trim();
+  localStorage.setItem('sala',cfg.sala);
+}
+if(_par.get('modo')==='cuidador'||_par.get('modo')==='brazalete'){
+  cfg.modo=_par.get('modo');
+  localStorage.setItem('modo',cfg.modo);
+}
+let umb=Object.assign({},UMB_DEF);
+try{ Object.assign(umb, JSON.parse(localStorage.getItem('umb')||'{}')); }catch(e){}
+const esBrazalete=function(){ return cfg.modo==='brazalete'; };
+
+// ---------------- estado ----------------
+let vigilando=false, wakeLock=null, mqttCli=null;
+let audio=null, alarma=null, cuentaAtras=null;
+let dispositivo=null, tUltimoRemoto=0;
+let estadoPaciente='ok', vigilanciaT0=0;
+let nMuestras=0, tVentanaHz=0, hzActual=0, totalMuestras=0;
+const bufM=[];                 // ultimos 3 s de muestras
+const serieAcc=[], serieBpm=[];
+const sA=[0,0,1];
+const st={fase:'REPOSO',t0:0,picoSvm:0,picoGiro:0,vAntes:[0,0,1],tLibre:0,marcaLibre:0,datos:''};
+
+// ---------------- utilidades de interfaz ----------------
+function log(txt,det,clase){
+  const d=new Date();
+  const h=[d.getHours(),d.getMinutes(),d.getSeconds()].map(function(n){return String(n).padStart(2,'0');}).join(':');
+  const el=document.createElement('div');
+  el.className='ev'+(clase?' '+clase:'');
+  el.innerHTML='<time>'+h+'</time><div><b>'+txt+'</b>'+(det?'<small>'+det+'</small>':'')+'</div>';
+  const c=$('log');
+  if(c.firstChild && c.firstChild.textContent.indexOf('Sin eventos')>=0) c.innerHTML='';
+  c.insertBefore(el,c.firstChild);
+  while(c.children.length>60) c.removeChild(c.lastChild);
+}
+function pintarBpm(v){
+  $('bpm').textContent = v>0?v:'--';
+  $('corazon').className = v>0?'corazon lat':'corazon';
+  if(v>0){ $('corazon').style.animationDuration=(60/v)+'s';
+    serieBpm.push(v); if(serieBpm.length>60) serieBpm.shift(); linea('gBpm',serieBpm,'#f87171'); }
+}
+function pintarBat(p){
+  $('bat').textContent=p+'%'; $('barBat').style.width=p+'%';
+  $('barBat').style.background = p<20?'#f87171' : p<40?'#fbbf24' : '#4ade80';
+}
+function linea(idc,datos,color,ref){
+  const c=$(idc); if(!c) return;
+  const ctx=c.getContext('2d'), r=window.devicePixelRatio||1;
+  const w=c.clientWidth, h=c.clientHeight;
+  c.width=w*r; c.height=h*r; ctx.setTransform(r,0,0,r,0,0);
+  ctx.clearRect(0,0,w,h);
+  if(datos.length<2) return;
+  let min=Infinity,max=-Infinity;
+  for(let i=0;i<datos.length;i++){ if(datos[i]<min)min=datos[i]; if(datos[i]>max)max=datos[i]; }
+  if(ref!=null){ if(ref>max)max=ref; if(ref<min)min=ref; }
+  const m=(max-min)*0.12+0.05; min-=m; max+=m;
+  const y=function(v){ return h-(v-min)/(max-min)*(h-6)-3; };
+  if(ref!=null){
+    ctx.beginPath(); ctx.moveTo(0,y(ref)); ctx.lineTo(w,y(ref));
+    ctx.strokeStyle='#7f1d1d'; ctx.lineWidth=1; ctx.setLineDash([4,4]); ctx.stroke(); ctx.setLineDash([]);
+  }
+  ctx.beginPath();
+  for(let i=0;i<datos.length;i++){
+    const x=i/(datos.length-1)*w;
+    i?ctx.lineTo(x,y(datos[i])):ctx.moveTo(x,y(datos[i]));
+  }
+  ctx.strokeStyle=color; ctx.lineWidth=1.8; ctx.lineJoin='round'; ctx.stroke();
+}
+
+// ---------------- sonido ----------------
+function iniAudio(){
+  if(!audio) audio=new (window.AudioContext||window.webkitAudioContext)();
+  if(audio.state==='suspended') audio.resume();
+}
+function sonar(grave){
+  pararSonido(); iniAudio();
+  alarma=setInterval(function(){
+    const o=audio.createOscillator(), g=audio.createGain();
+    o.frequency.value=grave?660:880; o.type='square';
+    g.gain.setValueAtTime(.18,audio.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+.28);
+    o.connect(g); g.connect(audio.destination);
+    o.start(); o.stop(audio.currentTime+.3);
+  }, grave?600:900);
+  if(navigator.vibrate) navigator.vibrate(grave?[400,150,400,150,400]:[250,400]);
+}
+function pararSonido(){
+  if(alarma){clearInterval(alarma);alarma=null;}
+  if(navigator.vibrate) navigator.vibrate(0);
+}
+
+// ---------------- alertas ----------------
+function mostrarAlerta(tipo,datos){
+  const a=$('alerta');
+  a.className='ver '+(tipo==='pre'?'pre':'conf');
+  $('alertaDatos').textContent=datos||'';
+  clearInterval(cuentaAtras);
+  if(tipo==='pre'){
+    $('alertaTit').textContent='Posible caida detectada';
+    $('alertaTxt').textContent='Si estas bien, cancela antes de que acabe la cuenta.';
+    let n=25; $('cuenta').textContent=n; $('cuenta').style.display='block';
+    cuentaAtras=setInterval(function(){ n--; $('cuenta').textContent=Math.max(n,0);
+      if(n<=0) clearInterval(cuentaAtras); },1000);
+    sonar(false);
+  }else{
+    $('alertaTit').textContent='CAIDA CONFIRMADA';
+    $('alertaTxt').textContent='No hubo respuesta. Contacta con la persona ahora mismo.';
+    $('cuenta').style.display='none';
+    sonar(true);
+  }
+}
+function cerrarAlerta(){ $('alerta').className=''; clearInterval(cuentaAtras); pararSonido(); }
+
+// remoto: llego por la nube, no lo genero este telefono.
+// viejo:  es un evento retenido de hace rato; se anota en el historial
+//         pero no dispara la alarma, para no asustar al abrir la app.
+function procesarEstado(msg,remoto,viejo){
+  const p=msg.split(';'), tipo=p[0], datos=p.slice(1).join('  ');
+  const suf=remoto?' (remoto)':'';
+  if(tipo==='PREALERTA'){
+    estadoPaciente='prealerta';
+    log('Posible caida'+suf+(viejo?' [anterior]':''),datos,'ambar');
+    if(!viejo) mostrarAlerta('pre',datos);
+  }
+  else if(tipo==='CAIDA_CONFIRMADA'){
+    estadoPaciente='caida';
+    log('Caida confirmada'+suf+(viejo?' [anterior]':''),datos,'rojo');
+    if(!viejo) mostrarAlerta('conf',datos);
+    if(!remoto) avisarTelegram('CAIDA CONFIRMADA. '+datos);
+  }
+  else if(tipo==='SOS_MANUAL'){
+    estadoPaciente='caida';
+    log('SOS manual'+suf+(viejo?' [anterior]':''),'','rojo');
+    if(!viejo) mostrarAlerta('conf','');
+    if(!remoto) avisarTelegram('SOS manual.');
+  }
+  else if(tipo==='CANCELADA'){
+    estadoPaciente='ok';
+    log('Alerta cancelada'+suf,'Falso positivo descartado','verde');
+    cerrarAlerta();
+  }
+  else log(msg);
+  pintarPanelCuidador();
+  // Al saltar una alerta, este telefono averigua donde esta y lo manda.
+  if(!remoto && !viejo &&
+     (tipo==='PREALERTA'||tipo==='CAIDA_CONFIRMADA'||tipo==='SOS_MANUAL')) pedirUbicacion();
+  if(!remoto) publicarEvento(tipo,datos);
+}
+
+// ---------------- sensores del telefono ----------------
+function vectorEn(tObj){
+  let mejor=null, dif=1e9;
+  for(let i=0;i<bufM.length;i++){
+    const d=Math.abs(bufM[i].t-tObj);
+    if(d<dif){ dif=d; mejor=bufM[i]; }
+  }
+  return mejor?[mejor.sx,mejor.sy,mejor.sz]:[0,0,1];
+}
+function anguloEntre(u,v){
+  const du=Math.hypot(u[0],u[1],u[2]), dv=Math.hypot(v[0],v[1],v[2]);
+  if(du<1e-4||dv<1e-4) return 0;
+  let c=(u[0]*v[0]+u[1]*v[1]+u[2]*v[2])/(du*dv);
+  c=Math.max(-1,Math.min(1,c));
+  return Math.acos(c)*180/Math.PI;
+}
+
+function onMotion(e){
+  const a=e.accelerationIncludingGravity;
+  if(!a||a.x===null||a.x===undefined) return;
+  const r=e.rotationRate||{};
+  const t=performance.now();
+  const ax=a.x/G, ay=a.y/G, az=a.z/G;
+  const gx=r.beta||0, gy=r.gamma||0, gz=r.alpha||0;
+  const svm=Math.hypot(ax,ay,az), gyro=Math.hypot(gx,gy,gz);
+
+  const k=0.15;
+  sA[0]+=k*(ax-sA[0]); sA[1]+=k*(ay-sA[1]); sA[2]+=k*(az-sA[2]);
+
+  const m={t:t,ax:ax,ay:ay,az:az,gx:gx,gy:gy,gz:gz,svm:svm,gyro:gyro,
+           sx:sA[0],sy:sA[1],sz:sA[2]};
+  bufM.push(m);
+  while(bufM.length && t-bufM[0].t>3000) bufM.shift();
+
+  nMuestras++; totalMuestras++;
+  if(t-tVentanaHz>1000){
+    hzActual=Math.round(nMuestras*1000/(t-tVentanaHz));
+    nMuestras=0; tVentanaHz=t;
+    $('hz').textContent=hzActual+' Hz';
+    $('barHz').style.width=Math.min(100,hzActual)+'%';
+    $('infoSensor').innerHTML='Aceleracion <b>'+svm.toFixed(2)+' g</b> &nbsp; Giro <b>'+
+      Math.round(gyro)+' dps</b> &nbsp; Estado <b>'+st.fase+'</b>';
+  }
+  serieAcc.push(svm);
+  if(serieAcc.length>140) serieAcc.shift();
+
+  if(grabando) filas.push(m);
+  detectar(m);
+}
+
+function detectar(m){
+  const t=m.t;
+  if(m.svm<umb.libreG){ if(!st.tLibre) st.tLibre=t;
+    if(t-st.tLibre>=umb.libreMs) st.marcaLibre=t; }
+  else st.tLibre=0;
+  const huboLibre = st.marcaLibre>0 && (t-st.marcaLibre)<1200;
+
+  switch(st.fase){
+    case 'REPOSO':
+      if(m.svm>umb.impactoG){
+        st.picoSvm=m.svm; st.picoGiro=m.gyro;
+        st.vAntes=vectorEn(t-1500);
+        st.fase='PICO'; st.t0=t;
+      }
+      break;
+    case 'PICO':
+      if(m.svm>st.picoSvm) st.picoSvm=m.svm;
+      if(m.gyro>st.picoGiro) st.picoGiro=m.gyro;
+      if(t-st.t0>300){ st.fase='ASENTAR'; st.t0=t; }
+      break;
+    case 'ASENTAR': {
+      if(t-st.t0<500) break;
+      const quieto=Math.abs(m.svm-1)<umb.quietoTolG && m.gyro<umb.quietoGiro;
+      if(!quieto){
+        st.fase='REPOSO';
+        log('Golpe descartado','Sigue habiendo movimiento tras el impacto');
+        break;
+      }
+      if(t-st.t0 < 500+umb.quietoMs) break;
+      const ang=anguloEntre(st.vAntes,[m.sx,m.sy,m.sz]);
+      let p=0;
+      if(huboLibre) p+=2;
+      if(st.picoGiro>umb.giroDps) p+=2;
+      if(ang>umb.orientDeg) p+=2;
+      if(st.picoSvm>umb.fuerteG) p+=1;
+      const datos='pts='+p+';g='+st.picoSvm.toFixed(1)+';dps='+Math.round(st.picoGiro)+
+                  ';ang='+Math.round(ang);
+      if(p>=umb.puntosMin){ st.fase='PREALERTA'; st.t0=t; st.datos=datos;
+        procesarEstado('PREALERTA;'+datos,false); }
+      else{
+        st.fase='REPOSO';
+        log('Golpe descartado','Solo '+p+' puntos de '+umb.puntosMin+' ('+datos+')');
+      }
+      break;
+    }
+    case 'PREALERTA':
+      if(t-st.t0>25000){
+        st.fase='CONFIRMADA'; st.t0=t;
+        procesarEstado('CAIDA_CONFIRMADA;'+st.datos,false);
+      }
+      break;
+  }
+}
+
+async function iniciarSensores(){
+  ocultarAviso();
+
+  if(typeof DeviceMotionEvent==='undefined'){
+    mostrarAviso('Este navegador no da acceso al acelerometro. Abre la app con '+
+      '<b>Chrome en Android</b>.');
+    return false;
+  }
+
+  // Causa numero uno de que "no funcione": la pagina no esta en contexto
+  // seguro. Pasa al abrir el archivo con doble clic (file://) o por http
+  // desde otro equipo de la red.
+  if(!window.isSecureContext){
+    mostrarAviso('La pagina <b>no esta en un contexto seguro</b> y el navegador bloquea '+
+      'los sensores.<br>Estas en: <b>'+location.origin+'</b><br><br>'+
+      'Tiene que ser <b>https://</b> o <b>http://localhost</b>. '+
+      'Abrir el archivo con doble clic no sirve.');
+    return false;
+  }
+
+  // iPhone exige pedir permiso explicito desde un gesto del usuario.
+  if(typeof DeviceMotionEvent.requestPermission==='function'){
+    try{
+      const p=await DeviceMotionEvent.requestPermission();
+      if(p!=='granted'){
+        mostrarAviso('No diste permiso para los sensores de movimiento. '+
+          'Recarga la pagina y acepta el aviso.');
+        return false;
+      }
+    }catch(e){
+      mostrarAviso('No se pudo pedir permiso de sensores: '+(e.message||e));
+      return false;
+    }
+  }
+
+  window.addEventListener('devicemotion',onMotion);
+  tVentanaHz=performance.now();
+
+  // Si a los 3 s no ha entrado ni una muestra, decirlo en vez de quedarse
+  // con la grafica plana y sin explicacion.
+  const antes=totalMuestras;
+  setTimeout(function(){
+    if(totalMuestras===antes){
+      mostrarAviso('No llegan datos de los sensores. Es normal en un <b>ordenador</b>, '+
+        'que no tiene acelerometro.<br>Para ver la app funcionando igualmente, usa el '+
+        'boton <b>Simular caida</b>. En el celular si funcionara.');
+    }else{
+      ocultarAviso();
+    }
+  },3000);
+  return true;
+}
+async function pedirWakeLock(){
+  try{ if(navigator.wakeLock) wakeLock=await navigator.wakeLock.request('screen'); }catch(e){}
+}
+document.addEventListener('visibilitychange',function(){
+  if(document.visibilityState==='visible' && vigilando) pedirWakeLock();
+});
+
+async function alternarVigilancia(){
+  if(vigilando){
+    vigilando=false;
+    window.removeEventListener('devicemotion',onMotion);
+    if(wakeLock){ try{wakeLock.release();}catch(e){} wakeLock=null; }
+    $('btnVigilar').textContent='Iniciar vigilancia';
+    $('btnVigilar').className='';
+    $('punto').classList.remove('on');
+    $('txtEstado').textContent='Detenido';
+    $('txtVig').textContent='Detenida';
+    log('Vigilancia detenida');
+    return;
+  }
+  iniAudio();
+  if(!await iniciarSensores()) return;
+  vigilando=true; st.fase='REPOSO';
+  pedirWakeLock();
+  $('btnVigilar').textContent='Detener vigilancia';
+  $('btnVigilar').className='rojo';
+  $('punto').classList.add('on');
+  $('txtEstado').textContent='Vigilando';
+  $('txtVig').textContent='Activa';
+  log('Vigilancia iniciada','Sensores del telefono','verde');
+}
+
+setInterval(function(){ if(vigilando||grabando) linea('gAcc',serieAcc,'#60a5fa',umb.impactoG); },200);
+
+// ---------------- grabacion de dataset ----------------
+const ETIQUETAS=['caida_frente','caida_atras','caida_lado','caida_silla',
+                 'sentarse','tumbarse','andar','escalera','gesto'];
+let etiqueta=localStorage.getItem('etiqueta')||'caida_frente';
+let grabando=false, filas=[], tGrab=0, cronoInt=null;
+let grabs=[];
+try{ grabs=JSON.parse(localStorage.getItem('grabs')||'[]'); }catch(e){ grabs=[]; }
+
+function pintarChips(){
+  const c=$('chips'); c.innerHTML='';
+  ETIQUETAS.forEach(function(e){
+    const d=document.createElement('div');
+    d.className='chip'+(e===etiqueta?' sel':'');
+    d.textContent=e.replace(/_/g,' ');
+    d.onclick=function(){ etiqueta=e; localStorage.setItem('etiqueta',e); pintarChips(); };
+    c.appendChild(d);
+  });
+}
+function guardarGrabs(){
+  try{ localStorage.setItem('grabs',JSON.stringify(grabs)); }
+  catch(e){ alert('Se lleno el almacenamiento. Descarga el dataset y borra las grabaciones.'); }
+}
+function pintarLista(){
+  const c=$('listaGrab');
+  if(!grabs.length){ c.innerHTML='<div class="prog">Ninguna todavia.</div>'; }
+  else{
+    c.innerHTML='';
+    grabs.slice().reverse().forEach(function(g){
+      const d=document.createElement('div');
+      d.className='grab';
+      d.innerHTML='<div><b>'+g.et.replace(/_/g,' ')+'</b><small>'+g.dur.toFixed(1)+
+                  ' s &middot; '+g.n+' muestras</small></div><span class="x">&times;</span>';
+      d.querySelector('.x').onclick=function(){
+        grabs=grabs.filter(function(x){return x.id!==g.id;});
+        guardarGrabs(); pintarLista(); pintarProgreso();
+      };
+      c.appendChild(d);
+    });
+  }
+  pintarProgreso();
+}
+function pintarProgreso(){
+  const cai=grabs.filter(function(g){return g.et.indexOf('caida')===0;}).length;
+  const nor=grabs.length-cai;
+  const kb=Math.round(JSON.stringify(grabs).length/1024);
+  $('progreso').innerHTML=
+    'Caidas: <b>'+cai+'</b> de 11 recomendadas<br>'+
+    'Movimientos normales: <b>'+nor+'</b> de 18 recomendados<br>'+
+    'Espacio usado: <b>'+kb+' kB</b> de unos 4000';
+}
+function alternarGrabacion(){
+  if(grabando){
+    grabando=false; clearInterval(cronoInt);
+    const dur=(performance.now()-tGrab)/1000;
+    if(filas.length>20){
+      const csv=filas.map(function(m){
+        return Math.round(m.t-tGrab)+','+m.ax.toFixed(3)+','+m.ay.toFixed(3)+','+m.az.toFixed(3)+
+               ','+m.gx.toFixed(1)+','+m.gy.toFixed(1)+','+m.gz.toFixed(1)+
+               ','+m.svm.toFixed(3)+','+m.gyro.toFixed(1);
+      }).join('\n');
+      grabs.push({id:Date.now(),et:etiqueta,dur:dur,n:filas.length,csv:csv});
+      guardarGrabs();
+      log('Grabacion guardada',etiqueta+' - '+dur.toFixed(1)+' s','verde');
+    }else{
+      log('Grabacion descartada','Demasiado corta');
+    }
+    filas=[];
+    $('btnGrabar').textContent='Empezar a grabar';
+    $('btnGrabar').className='';
+    $('crono').textContent='0.0 s';
+    pintarLista();
+    return;
+  }
+  (async function(){
+    if(!vigilando && !await iniciarSensores()) return;
+    filas=[]; grabando=true; tGrab=performance.now();
+    pedirWakeLock();
+    $('btnGrabar').textContent='Parar';
+    $('btnGrabar').className='rojo';
+    cronoInt=setInterval(function(){
+      $('crono').textContent=((performance.now()-tGrab)/1000).toFixed(1)+' s';
+    },100);
+  })();
+}
+function exportar(){
+  if(!grabs.length){ alert('No hay grabaciones que descargar.'); return; }
+  let txt='grabacion,etiqueta,t_ms,ax,ay,az,gx,gy,gz,svm,gyro\n';
+  grabs.forEach(function(g,i){
+    const pre=(i+1)+','+g.et+',';
+    txt+=g.csv.split('\n').map(function(l){return pre+l;}).join('\n')+'\n';
+  });
+  const b=new Blob([txt],{type:'text/csv'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(b); a.download='dataset.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function(){URL.revokeObjectURL(a.href);},3000);
+  log('dataset.csv descargado',grabs.length+' grabaciones','verde');
+}
+
+// ---------------- pulso por camara ----------------
+let ppgStream=null, ppgInt=null;
+async function medirPulso(){
+  if(ppgStream){ pararPulso(); return; }
+  try{
+    ppgStream=await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:{ideal:'environment'},width:{ideal:320},height:{ideal:240}}});
+  }catch(e){ $('infoPulso').textContent='No se pudo abrir la camara: '+(e.message||e); return; }
+  const track=ppgStream.getVideoTracks()[0];
+  try{ await track.applyConstraints({advanced:[{torch:true}]}); }catch(e){}
+  const v=$('video'); v.srcObject=ppgStream; await v.play();
+
+  const cv=document.createElement('canvas'); cv.width=60; cv.height=60;
+  const cx=cv.getContext('2d',{willReadFrequently:true});
+  const bruto=[], picos=[];
+  let t0=performance.now();
+  $('btnPulso').textContent='Parar medicion';
+
+  ppgInt=setInterval(function(){
+    const t=performance.now(), seg=(t-t0)/1000;
+    cx.drawImage(v,0,0,60,60);
+    const d=cx.getImageData(15,15,30,30).data;
+    let r=0,g=0;
+    for(let i=0;i<d.length;i+=4){ r+=d[i]; g+=d[i+1]; }
+    const n=d.length/4; r/=n; g/=n;
+
+    if(r<90 || r-g<25){
+      $('infoPulso').textContent='No detecto el dedo. Tapa del todo la camara trasera y el flash, sin apretar mucho.';
+      return;
+    }
+    bruto.push({t:t,v:r});
+    while(bruto.length && t-bruto[0].t>6000) bruto.shift();
+    if(bruto.length<20) return;
+
+    // quitar la linea de base
+    const media=bruto.reduce(function(s,x){return s+x.v;},0)/bruto.length;
+    const sig=bruto.map(function(x){return x.v-media;});
+    linea('gPulso',sig.slice(-120),'#4ade80');
+
+    // buscar picos en el ultimo tramo
+    const i=sig.length-3;
+    if(i>1 && sig[i]>sig[i-1] && sig[i]>=sig[i+1] && sig[i]>0.35){
+      const tp=bruto[i].t;
+      if(!picos.length || tp-picos[picos.length-1]>350){
+        picos.push(tp);
+        if(picos.length>12) picos.shift();
+      }
+    }
+    if(picos.length>=4){
+      const iv=[];
+      for(let k=1;k<picos.length;k++) iv.push(picos[k]-picos[k-1]);
+      iv.sort(function(a,b){return a-b;});
+      const med=iv[Math.floor(iv.length/2)];
+      const b=Math.round(60000/med);
+      if(b>=40&&b<=180) pintarBpm(b);
+    }
+    $('infoPulso').textContent='Midiendo... '+Math.round(seg)+' s de 30. No muevas el dedo.';
+    if(seg>30){
+      pararPulso();
+      $('infoPulso').textContent='Medicion terminada: '+($('bpm').textContent)+' lpm.';
+      log('Pulso medido',$('bpm').textContent+' lpm por camara','verde');
+    }
+  },40);
+}
+function pararPulso(){
+  if(ppgInt){ clearInterval(ppgInt); ppgInt=null; }
+  if(ppgStream){ ppgStream.getTracks().forEach(function(t){t.stop();}); ppgStream=null; }
+  $('btnPulso').textContent='Medir pulso (30 s)';
+}
+
+// ---------------- nube ----------------
+function tema(s){ return 'brz/'+cfg.sala+'/'+s; }
+function conectarNube(){
+  if(mqttCli){ try{mqttCli.end(true);}catch(e){} mqttCli=null; }
+  if(!cfg.sala||typeof mqtt==='undefined'){ $('txtNube').textContent='Sin sala'; return; }
+  const url=BROKERS[iBroker];
+  $('txtNube').textContent='Conectando...';
+  mqttCli=mqtt.connect(url,{clientId:'brz_'+Math.random().toString(16).slice(2,10),
+    reconnectPeriod:4000,connectTimeout:8000,clean:true});
+
+  mqttCli.on('connect',function(){
+    fallosBroker=0;
+    $('puntoNube').classList.add('on');
+    $('txtNube').textContent='Sala '+cfg.sala;
+    // Los dos modos se suscriben: asi el brazalete tambien ve si el
+    // cuidador descarta una alerta, y el cuidador ve todo lo del paciente.
+    mqttCli.subscribe(tema('evento'));
+    if(!esBrazalete()){
+      mqttCli.subscribe(tema('vitales'));
+      mqttCli.subscribe(tema('ubicacion'));
+      log('Conectado a la sala '+cfg.sala,'Esperando datos del paciente','verde');
+    }
+  });
+
+  // Si un broker falla varias veces seguidas, se pasa al siguiente.
+  mqttCli.on('error',function(){ rotarBroker(); });
+  mqttCli.on('close',function(){
+    $('puntoNube').classList.remove('on');
+    $('txtNube').textContent='Reconectando...';
+    rotarBroker();
+  });
+
+  mqttCli.on('message',function(t,payload){
+    const txt=payload.toString();
+    if(t===tema('evento')){ recibirEvento(txt); return; }
+    if(t===tema('ubicacion')){
+      try{ ultimaUbic=JSON.parse(txt); pintarMapa();
+        log('Ubicacion del paciente recibida','Precision '+ultimaUbic.acc+' m'); }catch(e){}
+      return;
+    }
+    try{
+      const d=JSON.parse(txt);
+      tUltimoRemoto=Date.now();
+      if(d.bpm) pintarBpm(d.bpm);
+      if(d.bat!=null) pintarBat(d.bat);
+      $('txtVig').textContent=d.vig?'Activa (remota)':'Detenida (remota)';
+      $('hz').textContent=(d.hz||0)+' Hz';
+      pintarPanelCuidador();
+    }catch(e){}
+  });
+}
+function rotarBroker(){
+  fallosBroker++;
+  if(fallosBroker<3) return;
+  fallosBroker=0;
+  iBroker=(iBroker+1)%BROKERS.length;
+  log('Cambiando de servidor','Probando '+BROKERS[iBroker].split('/')[2]);
+  setTimeout(conectarNube,500);
+}
+
+// Los eventos viajan como JSON con marca de tiempo y se publican con
+// "retain", asi el cuidador que abre la app despues de una caida la ve
+// igualmente. La marca de tiempo evita que una alerta vieja suene al abrir.
+function recibirEvento(txt){
+  let tipo, datos, ts, de;
+  try{
+    const d=JSON.parse(txt);
+    tipo=d.tipo; datos=d.datos||''; ts=d.ts||0; de=d.de;
+  }catch(e){
+    const p=txt.split(';'); tipo=p[0]; datos=p.slice(1).join('  '); ts=Date.now();
+  }
+  if(!tipo) return;
+  if(de===MI_ID) return;   // eco de nuestro propio mensaje
+  const viejo = ts && (Date.now()-ts > 300000);
+  procesarEstado(tipo+(datos?';'+datos:''), true, viejo);
+}
+function publicar(sub,contenido){
+  if(!mqttCli||!mqttCli.connected||!esBrazalete()) return;
+  mqttCli.publish(tema(sub),contenido,{retain:true});
+}
+function publicarEvento(tipo,datos){
+  if(!mqttCli||!mqttCli.connected) return;
+  mqttCli.publish(tema('evento'),
+    JSON.stringify({tipo:tipo,datos:datos||'',ts:Date.now(),de:MI_ID}),{retain:true});
+}
+// ---------------- ubicacion ----------------
+// Solo se pide cuando hay una alerta, no todo el rato: gasta bateria y
+// no hace falta saber donde esta alguien que esta bien.
+let ultimaUbic=null;
+function pedirUbicacion(){
+  if(!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(function(p){
+    ultimaUbic={lat:p.coords.latitude, lon:p.coords.longitude,
+                acc:Math.round(p.coords.accuracy), ts:Date.now()};
+    pintarMapa();
+    if(mqttCli && mqttCli.connected)
+      mqttCli.publish(tema('ubicacion'),JSON.stringify(ultimaUbic),{retain:true});
+    log('Ubicacion obtenida','Precision '+ultimaUbic.acc+' m');
+    if(estadoPaciente==='caida'||estadoPaciente==='prealerta')
+      avisarTelegram('Ubicacion: '+enlaceMapa());
+  },function(err){
+    log('Sin ubicacion',err.message||'permiso denegado');
+  },{enableHighAccuracy:true,timeout:10000,maximumAge:30000});
+}
+function enlaceMapa(){
+  if(!ultimaUbic) return null;
+  return 'https://www.google.com/maps?q='+ultimaUbic.lat+','+ultimaUbic.lon;
+}
+function pintarMapa(){
+  const hay=!!ultimaUbic;
+  $('btnMapa').style.display=hay?'':'none';
+  $('btnMapaPanel').style.display=(hay&&!esBrazalete())?'':'none';
+}
+
+function avisarTelegram(txt){
+  if(!cfg.tgToken||!cfg.tgChat) return;
+  fetch('https://api.telegram.org/bot'+cfg.tgToken+'/sendMessage?chat_id='+
+        encodeURIComponent(cfg.tgChat)+'&text='+encodeURIComponent('[Brazalete] '+txt))
+    .then(function(){log('Telegram enviado','','verde');})
+    .catch(function(){log('Telegram enviado (sin confirmar)');});
+}
+setInterval(function(){
+  if(!esBrazalete()) return;
+  const b=parseInt($('bpm').textContent,10);
+  const p=parseInt($('bat').textContent,10);
+  publicar('vitales',JSON.stringify({bpm:isNaN(b)?0:b,bat:isNaN(p)?0:p,
+    vig:vigilando,hz:hzActual,t:Date.now()}));
+},3000);
+setInterval(function(){
+  if(esBrazalete()||!tUltimoRemoto) return;
+  if(Date.now()-tUltimoRemoto>30000) $('txtVig').textContent='Sin señal';
+},5000);
+
+// ---------------- brazalete BLE (opcional) ----------------
+async function conectarBLE(){
+  if(!navigator.bluetooth){ alert('Este navegador no soporta Web Bluetooth. Usa Chrome en Android.'); return; }
+  try{
+    iniAudio();
+    dispositivo=await navigator.bluetooth.requestDevice({
+      filters:[{namePrefix:'Brazalete'}],optionalServices:[SRV_HR,SRV_BAT,SRV_PROP]});
+    const gatt=await dispositivo.gatt.connect();
+    dispositivo.addEventListener('gattserverdisconnected',function(){
+      log('Brazalete desconectado','','rojo'); $('btnBLE').textContent='Conectar brazalete'; });
+    try{
+      const s=await gatt.getPrimaryService(SRV_HR);
+      const c=await s.getCharacteristic(CH_HR);
+      await c.startNotifications();
+      c.addEventListener('characteristicvaluechanged',function(e){
+        const dv=e.target.value, f=dv.getUint8(0);
+        pintarBpm(f&1?dv.getUint16(1,true):dv.getUint8(1)); });
+    }catch(e){}
+    const s=await gatt.getPrimaryService(SRV_PROP);
+    const c=await s.getCharacteristic(CH_EST);
+    await c.startNotifications();
+    c.addEventListener('characteristicvaluechanged',function(e){
+      procesarEstado(new TextDecoder().decode(e.target.value),false); });
+    $('btnBLE').textContent='Brazalete conectado';
+    log('Brazalete conectado','Ahora tambien llegan sus datos','verde');
+  }catch(e){
+    if(e.name!=='NotFoundError') log('Error de Bluetooth',String(e.message||e),'rojo');
+  }
+}
+
+// ---------------- ajustes ----------------
+const CAMPOS=[['uImpacto','impactoG'],['uFuerte','fuerteG'],['uLibre','libreG'],
+  ['uGiro','giroDps'],['uOrient','orientDeg'],['uQuieto','quietoMs'],
+  ['uTol','quietoTolG'],['uPuntos','puntosMin']];
+function abrirAjustes(){
+  $('inSala').value=cfg.sala; $('inTel').value=cfg.tel;
+  $('inTgToken').value=cfg.tgToken; $('inTgChat').value=cfg.tgChat;
+  $('modoBraz').classList.toggle('sel',esBrazalete());
+  $('modoCuid').classList.toggle('sel',!esBrazalete());
+  CAMPOS.forEach(function(c){ $(c[0]).value=umb[c[1]]; });
+  $('ajustes').classList.add('ver');
+}
+$('btnAjustes').onclick=abrirAjustes;
+$('btnCerrarAjustes').onclick=function(){ $('ajustes').classList.remove('ver'); };
+$('modoBraz').onclick=function(){ cfg.modo='brazalete'; this.classList.add('sel'); $('modoCuid').classList.remove('sel'); };
+$('modoCuid').onclick=function(){ cfg.modo='cuidador'; this.classList.add('sel'); $('modoBraz').classList.remove('sel'); };
+$('btnRestaurar').onclick=function(){ umb=Object.assign({},UMB_DEF); abrirAjustes(); };
+$('btnCompartir').onclick=function(){
+  const sala=$('inSala').value.trim()||cfg.sala;
+  const url=location.origin+location.pathname+'?sala='+encodeURIComponent(sala)+'&modo=cuidador';
+  if(navigator.share){
+    navigator.share({title:'Panel del cuidador',
+      text:'Abre este enlace para vigilar el brazalete',url:url}).catch(function(){});
+  }else if(navigator.clipboard){
+    navigator.clipboard.writeText(url)
+      .then(function(){ alert('Enlace copiado:\n\n'+url); })
+      .catch(function(){ prompt('Copia este enlace:',url); });
+  }else{
+    prompt('Copia este enlace:',url);
+  }
+};
+$('btnGuardar').onclick=function(){
+  cfg.sala=$('inSala').value.trim()||cfg.sala;
+  cfg.tel=$('inTel').value.trim()||'112';
+  cfg.tgToken=$('inTgToken').value.trim();
+  cfg.tgChat=$('inTgChat').value.trim();
+  ['modo','sala','tel','tgToken','tgChat'].forEach(function(k){ localStorage.setItem(k,cfg[k]); });
+  CAMPOS.forEach(function(c){
+    const v=parseFloat($(c[0]).value);
+    if(!isNaN(v)) umb[c[1]]=v;
+  });
+  localStorage.setItem('umb',JSON.stringify(umb));
+  $('ajustes').classList.remove('ver');
+  aplicarModo(); conectarNube();
+  log('Ajustes guardados','Modo '+cfg.modo+', sala '+cfg.sala);
+};
+
+// ---------------- navegacion y botones ----------------
+function ir(p){
+  $('pagMonitor').classList.toggle('ver',p==='m');
+  $('pagGrabar').classList.toggle('ver',p==='g');
+  $('navMonitor').classList.toggle('sel',p==='m');
+  $('navGrabar').classList.toggle('sel',p==='g');
+}
+$('navMonitor').onclick=function(){ir('m');};
+$('navGrabar').onclick=function(){ir('g');};
+$('btnVigilar').onclick=alternarVigilancia;
+$('btnGrabar').onclick=alternarGrabacion;
+$('btnExportar').onclick=exportar;
+$('btnVaciar').onclick=function(){
+  if(confirm('Se borran las '+grabs.length+' grabaciones. Descargaste el dataset?')){
+    grabs=[]; guardarGrabs(); pintarLista();
+  }
+};
+$('btnPulso').onclick=medirPulso;
+$('btnBLE').onclick=conectarBLE;
+$('btnDemo').onclick=function(){
+  iniAudio();
+  procesarEstado('PREALERTA;pts=6;g=3.4;dps=312;ang=74',false);
+  setTimeout(function(){
+    if($('alerta').classList.contains('pre'))
+      procesarEstado('CAIDA_CONFIRMADA;pts=6;g=3.4;dps=312;ang=74',false);
+  },25000);
+};
+$('btnEstoyBien').onclick=function(){
+  cerrarAlerta(); st.fase='REPOSO';
+  log('Alerta cancelada','Cancelada desde el telefono','verde');
+  procesarEstado('CANCELADA',false);
+};
+$('btnLlamar').onclick=function(){ location.href='tel:'+cfg.tel; };
+$('btnMapa').onclick=$('btnMapaPanel').onclick=function(){
+  const u=enlaceMapa();
+  if(u) window.open(u,'_blank');
+};
+
+function aplicarModo(){
+  $('titulo').textContent=esBrazalete()?'Brazalete':'Panel del cuidador';
+  ['btnVigilar','btnDemo','btnBLE','btnPulso'].forEach(function(b){
+    $(b).style.display=esBrazalete()?'':'none'; });
+  $('navGrabar').style.display=esBrazalete()?'':'none';
+  $('btnEstoyBien').textContent=esBrazalete()?'Estoy bien, cancelar':'Descartar aviso';
+  if(!esBrazalete()) ir('m');
+  pintarPanelCuidador();
+}
+
+// ---------------- panel del cuidador ----------------
+function pintarPanelCuidador(){
+  const c=$('cardCuidador');
+  if(!c) return;
+  if(esBrazalete()){ c.style.display='none'; return; }
+  c.style.display='';
+  const e=$('estPac');
+  if(estadoPaciente==='caida'){       e.textContent='CAIDA CONFIRMADA'; e.style.color='#f87171'; }
+  else if(estadoPaciente==='prealerta'){ e.textContent='Posible caida';   e.style.color='#fbbf24'; }
+  else if(!tUltimoRemoto){            e.textContent='Sin datos';        e.style.color='#8d8a83'; }
+  else{                               e.textContent='Todo normal';      e.style.color='#4ade80'; }
+
+  let info;
+  if(!tUltimoRemoto){
+    info='Esperando al brazalete. Comprueba que el otro telefono tenga el mismo '+
+         'codigo de sala y la vigilancia iniciada.';
+  }else{
+    const s=Math.round((Date.now()-tUltimoRemoto)/1000);
+    if(s<60)      info='Ultimo dato hace '+s+' s. Conexion correcta.';
+    else if(s<600)info='Ultimo dato hace '+Math.round(s/60)+' min. Puede que el otro telefono '+
+                       'haya cerrado la app o perdido internet.';
+    else          info='Sin datos desde hace '+Math.round(s/60)+' min. El brazalete no esta enviando.';
+  }
+  $('estPacInfo').textContent=info;
+}
+setInterval(pintarPanelCuidador,2000);
+
+// ---------------- avisos en pantalla ----------------
+// Para problemas que el usuario puede resolver, en vez de fallar en silencio.
+function mostrarAviso(txt){
+  $('txtAviso').innerHTML=txt;
+  $('cardAviso').style.display='';
+}
+function ocultarAviso(){ $('cardAviso').style.display='none'; }
+
+if(navigator.getBattery){
+  navigator.getBattery().then(function(b){
+    const u=function(){ pintarBat(Math.round(b.level*100)); };
+    u(); b.addEventListener('levelchange',u);
+  });
+}
+window.addEventListener('resize',function(){
+  linea('gAcc',serieAcc,'#60a5fa',umb.impactoG); linea('gBpm',serieBpm,'#f87171');
+});
+// ---------------- instalacion como app ----------------
+let promptInstalar=null;
+if('serviceWorker' in navigator && location.protocol!=='file:'){
+  window.addEventListener('load',function(){
+    navigator.serviceWorker.register('sw.js').catch(function(){});
+  });
+}
+// Chrome avisa cuando la app cumple los requisitos para instalarse.
+// Guardamos el aviso y lo lanzamos desde nuestro propio boton.
+window.addEventListener('beforeinstallprompt',function(e){
+  e.preventDefault();
+  promptInstalar=e;
+  $('btnInstalar').style.display='';
+});
+$('btnInstalar').onclick=function(){
+  if(!promptInstalar) return;
+  promptInstalar.prompt();
+  promptInstalar.userChoice.then(function(){
+    promptInstalar=null;
+    $('btnInstalar').style.display='none';
+  });
+};
+window.addEventListener('appinstalled',function(){
+  $('btnInstalar').style.display='none';
+  log('App instalada','Ya se abre desde el icono, sin navegador','verde');
+});
+
+pintarChips(); pintarLista(); aplicarModo(); conectarNube();
+
+// Aviso inmediato si la pagina no puede usar sensores, sin esperar a que
+// pulsen "Iniciar vigilancia" y no entiendan por que no pasa nada.
+if(!window.isSecureContext){
+  mostrarAviso('Esta pagina no esta en un <b>contexto seguro</b> ('+location.origin+'), '+
+    'asi que el navegador va a bloquear los sensores y la camara.<br><br>'+
+    'Tiene que abrirse por <b>https://</b> o <b>http://localhost</b>.');
+}
+</script>
+</body>
+</html>
