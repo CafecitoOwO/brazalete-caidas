@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Una tarjeta por persona vigilada.
+
+     Sigue el dibujo del cuaderno, pero puesto en vertical: en un
+     telefono no caben cuatro graficas en fila, asi que van dos y mas
+     anchas, que se leen mejor. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="12dp"
+    android:background="@drawable/tarjeta"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <!-- Cabecera: foto, nombre, que esta haciendo, y el semaforo -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageView
+            android:id="@+id/foto"
+            android:layout_width="46dp"
+            android:layout_height="46dp"
+            android:background="@drawable/circulo"
+            android:contentDescription="Foto"
+            android:padding="7dp"
+            android:src="@mipmap/ic_launcher" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/nombre"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Paciente"
+                android:textColor="@color/texto"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/actividad"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="Sin datos"
+                android:textColor="@color/apagado"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <View
+            android:id="@+id/luz"
+            android:layout_width="13dp"
+            android:layout_height="13dp"
+            android:background="@drawable/circulo" />
+    </LinearLayout>
+
+    <!-- Señales en vivo -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="62dp"
+        android:layout_marginTop="14dp"
+        android:orientation="horizontal">
+
+        <com.proyecto.brazalete.MiniGrafica
+            android:id="@+id/ondaAcc"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginEnd="8dp"
+            android:layout_weight="1" />
+
+        <com.proyecto.brazalete.MiniGrafica
+            android:id="@+id/ondaBat"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1" />
+    </LinearLayout>
+
+    <!-- Numeros -->
+    <TextView
+        android:id="@+id/numeros"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:lineSpacingExtra="3dp"
+        android:text=""
+        android:textColor="@color/apagado"
+        android:textSize="13sp" />
+
+    <!-- Ubicacion -->
+    <TextView
+        android:id="@+id/ubicacion"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:text="Ubicacion: sin datos"
+        android:textColor="@color/apagado"
+        android:textSize="13sp" />
+
+    <!-- Acciones -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnMapaPac"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="4dp"
+            android:layout_weight="1"
+            android:backgroundTint="@color/borde"
+            android:text="Mapa"
+            android:textColor="@color/texto"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/btnDatosPac"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp"
+            android:layout_weight="1"
+            android:backgroundTint="@color/borde"
+            android:text="Datos"
+            android:textColor="@color/texto"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/btnQuitarPac"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:layout_weight="1"
+            android:backgroundTint="@color/borde"
+            android:text="Quitar"
+            android:textColor="@color/rojo"
+            android:textSize="12sp" />
+    </LinearLayout>
+</LinearLayout>

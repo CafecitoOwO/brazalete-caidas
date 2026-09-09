@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Fondo de tarjeta: esquinas redondeadas y un borde apenas visible,
+     igual que en la version web, para que las dos se parezcan. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/tarjeta" />
+    <corners android:radius="14dp" />
+    <stroke
+        android:width="1dp"
+        android:color="@color/borde" />
+</shape>

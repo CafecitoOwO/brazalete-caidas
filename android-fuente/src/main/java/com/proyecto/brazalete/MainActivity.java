@@ -31,8 +31,9 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
     private Ajustes ajustes;
 
     private TextView titulo, subestado, estadoVig, datosSensor, notaSegundoPlano;
-    private TextView infoPaciente;
-    private LinearLayout filasPacientes;
+    private TextView infoPaciente, infoMisCuidadores;
+    private LinearLayout filasPacientes, filasCuidadores, filasMisCuidadores, tarjetaMisCuidadores;
+    private long tUltimasListas = 0;
     private EditText campoNombre;
     private TextView alertaTitulo, alertaCuenta, alertaTexto, alertaDatos;
     private LinearLayout tarjetaCuidador, tarjetaHistorial, pantallaAlerta;
@@ -56,6 +57,10 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
         statsHistorial   = findViewById(R.id.statsHistorial);
         infoPaciente     = findViewById(R.id.infoPaciente);
         filasPacientes   = findViewById(R.id.filasPacientes);
+        filasCuidadores  = findViewById(R.id.filasCuidadores);
+        filasMisCuidadores = findViewById(R.id.filasMisCuidadores);
+        tarjetaMisCuidadores = findViewById(R.id.tarjetaMisCuidadores);
+        infoMisCuidadores = findViewById(R.id.infoMisCuidadores);
         campoNombre      = findViewById(R.id.campoNombre);
         pantallaAlerta   = findViewById(R.id.pantallaAlerta);
         alertaTitulo     = findViewById(R.id.alertaTitulo);
@@ -153,6 +158,22 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
 
         findViewById(R.id.btnExportar).setOnClickListener(v -> guardarHistorial());
 
+        findViewById(R.id.btnInvitarCuidador).setOnClickListener(v -> {
+            java.util.List<String[]> l = ajustes.getPacientes();
+            if (l.isEmpty()) {
+                Toast.makeText(this, "Primero agrega a una persona", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            String[] p = l.get(0);
+            String url = WEB + "?sala=" + Uri.encode(p[0]) + "&modo=cuidador"
+                       + "&nombre=" + Uri.encode(p[1]);
+            Intent i = new Intent(Intent.ACTION_SEND);
+            i.setType("text/plain");
+            i.putExtra(Intent.EXTRA_TEXT,
+                    "Ayudame a cuidar a " + p[1] + ". Abri este enlace:\n" + url);
+            startActivity(Intent.createChooser(i, "Invitar a otro cuidador"));
+        });
+
         findViewById(R.id.btnCompartir).setOnClickListener(v -> {
             String sala = campoSala.getText().toString().trim();
             if (sala.isEmpty()) sala = ajustes.getSala();
@@ -190,6 +211,194 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
         ContextCompat.startForegroundService(this, i);
     }
 
+    /* ==============================================================
+       Tarjetas de pacientes
+       ==============================================================
+
+       Una tarjeta por persona vigilada, como en el dibujo: foto,
+       nombre, que esta haciendo, sus señales en vivo y los botones.
+       Las vistas se crean una vez y despues solo se actualizan, para
+       que no parpadeen ni pierdan el scroll cada segundo.            */
+
+    private final java.util.HashMap<String, View> tarjetasPac = new java.util.HashMap<>();
+
+    private void pintarTarjetasPacientes() {
+        ServicioVigilancia s = ServicioVigilancia.get();
+        java.util.List<String[]> lista = ajustes.getPacientes();
+
+        if (ajustes.esBrazalete() || lista.isEmpty()) {
+            if (filasPacientes.getChildCount() > 0) {
+                filasPacientes.removeAllViews();
+                tarjetasPac.clear();
+            }
+            infoPaciente.setVisibility(ajustes.esBrazalete() ? View.GONE : View.VISIBLE);
+            return;
+        }
+        infoPaciente.setVisibility(View.GONE);
+
+        // Quitar las que sobren
+        java.util.HashSet<String> vigentes = new java.util.HashSet<>();
+        for (String[] p : lista) vigentes.add(p[0]);
+        java.util.Iterator<String> it = tarjetasPac.keySet().iterator();
+        while (it.hasNext()) {
+            String sala = it.next();
+            if (!vigentes.contains(sala)) {
+                filasPacientes.removeView(tarjetasPac.get(sala));
+                it.remove();
+            }
+        }
+
+        for (String[] p : lista) {
+            final String sala = p[0];
+            View v = tarjetasPac.get(sala);
+            if (v == null) {
+                v = getLayoutInflater().inflate(R.layout.item_paciente, filasPacientes, false);
+                tarjetasPac.put(sala, v);
+                filasPacientes.addView(v);
+
+                v.findViewById(R.id.btnQuitarPac).setOnClickListener(x -> {
+                    java.util.List<String[]> l = ajustes.getPacientes();
+                    java.util.List<String[]> nueva = new java.util.ArrayList<>();
+                    for (String[] q : l) if (!q[0].equals(sala)) nueva.add(q);
+                    ajustes.setPacientes(nueva);
+                    reconectar();
+                });
+                v.findViewById(R.id.btnMapaPac).setOnClickListener(x -> abrirMapa(sala));
+                v.findViewById(R.id.btnDatosPac).setOnClickListener(x -> guardarHistorial());
+            }
+            actualizarTarjeta(v, sala, p[1], s);
+        }
+    }
+
+    private void actualizarTarjeta(View v, String sala, String nombre, ServicioVigilancia s) {
+        ServicioVigilancia.EstadoPac p = (s == null) ? null : s.pacientes.get(sala);
+
+        ((TextView) v.findViewById(R.id.nombre)).setText(nombre);
+
+        long seg = (p == null || p.ultimo == 0) ? -1 : (System.currentTimeMillis() - p.ultimo) / 1000;
+        int color; String estadoTxt;
+        if (p != null && p.estado.equals("caida"))      { color = 0xFFF87171; estadoTxt = "CAIDA CONFIRMADA"; }
+        else if (p != null && p.estado.equals("prealerta")) { color = 0xFFFBBF24; estadoTxt = "Posible caida"; }
+        else if (seg < 0)                                { color = 0xFF5A5751; estadoTxt = "Sin datos todavia"; }
+        else if (seg > 45)                               { color = 0xFFF87171; estadoTxt = "Sin señal"; }
+        else if (p.pausa)                                { color = 0xFFFBBF24; estadoTxt = "Vigilancia pausada"; }
+        else if (!p.vig)                                 { color = 0xFFFBBF24; estadoTxt = "Vigilancia detenida"; }
+        else { color = 0xFF4ADE80; estadoTxt = p.actividad.isEmpty() ? "Todo normal" : p.actividad; }
+
+        TextView act = v.findViewById(R.id.actividad);
+        act.setText(estadoTxt);
+        act.setTextColor(color);
+        v.findViewById(R.id.luz).getBackground().setTint(color);
+
+        MiniGrafica onda = v.findViewById(R.id.ondaAcc);
+        onda.setTitulo("Aceleracion");
+        MiniGrafica bat = v.findViewById(R.id.ondaBat);
+        bat.setTitulo("Bateria");
+        bat.setColor("#60A5FA");
+
+        if (p == null || seg < 0 || seg > 45) {
+            onda.marcarDesconectado();
+            bat.marcarDesconectado();
+        } else {
+            onda.setDatos(p.ondas, 2.5f);
+            float[] sb = new float[p.serieBat.size()];
+            for (int i = 0; i < sb.length; i++) sb[i] = p.serieBat.get(i);
+            bat.setDatos(sb, Float.NaN);
+        }
+
+        StringBuilder n = new StringBuilder();
+        if (p == null || seg < 0) n.append("Esperando su primera conexion");
+        else {
+            n.append("Ultimo dato ").append(seg < 90 ? seg + " s" : (seg / 60) + " min").append(" atras");
+            if (p.bat >= 0) n.append("   ·   Bateria ").append(p.bat).append('%');
+            if (p.hz > 0)   n.append("   ·   ").append(p.hz).append(" Hz");
+            if (p.pasos > 0) n.append("\n").append(p.pasos).append(" pasos");
+        }
+        ((TextView) v.findViewById(R.id.numeros)).setText(n.toString());
+
+        ((TextView) v.findViewById(R.id.ubicacion)).setText(
+                p == null || p.ubicacion.isEmpty()
+                        ? "Ubicacion: solo se envia al saltar una alerta"
+                        : "Ubicacion: " + p.ubicacion);
+        v.findViewById(R.id.btnMapaPac).setEnabled(p != null && !p.ubicacion.isEmpty());
+    }
+
+    private void abrirMapa(String sala) {
+        ServicioVigilancia s = ServicioVigilancia.get();
+        if (s == null) return;
+        ServicioVigilancia.EstadoPac p = s.pacientes.get(sala);
+        if (p == null || p.ubicacion.isEmpty()) {
+            Toast.makeText(this, "Todavia no hay ubicacion de esta persona",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        startActivity(new Intent(Intent.ACTION_VIEW,
+                Uri.parse("https://www.google.com/maps?q=" + p.lat + "," + p.lon)));
+    }
+
+    /* ==============================================================
+       Listas de personas (cuidadores)
+       ============================================================== */
+
+    private void pintarListaCuidadores(LinearLayout destino, String sala, TextView vacio) {
+        ServicioVigilancia s = ServicioVigilancia.get();
+        destino.removeAllViews();
+        if (s == null) return;
+        ServicioVigilancia.EstadoPac p = s.pacientes.get(sala);
+        if (p == null || p.cuidadores.isEmpty()) {
+            if (vacio != null) vacio.setVisibility(View.VISIBLE);
+            return;
+        }
+        if (vacio != null) vacio.setVisibility(View.GONE);
+
+        java.util.ArrayList<ServicioVigilancia.Persona> orden =
+                new java.util.ArrayList<>(p.cuidadores.values());
+        java.util.Collections.sort(orden, (a, b) -> Long.compare(b.ultimaVez, a.ultimaVez));
+
+        long masReciente = 0;
+        for (ServicioVigilancia.Persona q : orden) {
+            if (q.ultimaVez > masReciente) masReciente = q.ultimaVez;
+            View f = getLayoutInflater().inflate(R.layout.item_persona, destino, false);
+            boolean activo = System.currentTimeMillis() - q.ultimaVez < 300000;
+            ((TextView) f.findViewById(R.id.nombreP)).setText(
+                    q.nombre == null || q.nombre.isEmpty() ? "Cuidador" : q.nombre);
+            ((TextView) f.findViewById(R.id.detalleP)).setText(
+                    activo ? "Revisando ahora" : "Ultima vez que reviso: " + haceCuanto(q.ultimaVez));
+            f.findViewById(R.id.luzP).getBackground().setTint(activo ? 0xFF4ADE80 : 0xFFFBBF24);
+            f.findViewById(R.id.btnAvisarP).setOnClickListener(x ->
+                    Toast.makeText(this, "Avisar a " + q.nombre + ": pendiente",
+                            Toast.LENGTH_SHORT).show());
+            destino.addView(f);
+        }
+
+        // Si hace mucho que nadie mira, decirlo donde se vea.
+        if (masReciente > 0 && System.currentTimeMillis() - masReciente > 12 * 3600000L) {
+            TextView av = new TextView(this);
+            av.setText("Hace " + haceCuanto(masReciente).replace("hace ", "") +
+                    " que ningun cuidador entra a revisar.");
+            av.setTextColor(0xFFFBBF24);
+            av.setTextSize(13);
+            av.setPadding(0, 10, 0, 0);
+            destino.addView(av);
+        }
+    }
+
+    private String haceCuanto(long ts) {
+        long s = (System.currentTimeMillis() - ts) / 1000;
+        if (s < 90) return "ahora";
+        long m = s / 60;
+        if (m < 60) return "hace " + m + " min";
+        long h = m / 60;
+        if (h < 48) return "hace " + h + " h";
+        return "hace " + (h / 24) + " dias";
+    }
+
+    private void reconectar() {
+        mandarAlServicio(ServicioVigilancia.ACCION_PARAR);
+        btnVigilar.postDelayed(() ->
+                mandarAlServicio(ServicioVigilancia.ACCION_INICIAR), 600);
+    }
+
     private void cambiarModo(String modo) {
         if (ajustes.getModo().equals(modo)) return;
         ajustes.setModo(modo);
@@ -208,6 +417,9 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
         titulo.setText(brz ? "CuidAPP" : "CuidAPP - Cuidador");
         tarjetaCuidador.setVisibility(brz ? View.GONE : View.VISIBLE);
         tarjetaHistorial.setVisibility(brz ? View.GONE : View.VISIBLE);
+        // El paciente ve quien lo vigila; el cuidador ve a sus pacientes.
+        tarjetaMisCuidadores.setVisibility(brz ? View.VISIBLE : View.GONE);
+        pintarTarjetasPacientes();
         // El boton se queda en los dos modos: en cuidador enciende la escucha
         // en segundo plano, que es lo que hace que suene con el movil guardado.
         btnVigilar.setVisibility(View.VISIBLE);
@@ -218,6 +430,27 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
 
     @Override public void alCambiar(ServicioVigilancia.Estado e) {
         runOnUiThread(() -> {
+            // Las tarjetas se refrescan siempre; las listas de personas
+            // cada 3 s, que cambian poco y recrearlas hace parpadeo.
+            pintarTarjetasPacientes();
+            if (System.currentTimeMillis() - tUltimasListas > 3000) {
+                tUltimasListas = System.currentTimeMillis();
+                if (ajustes.esBrazalete()) {
+                    pintarListaCuidadores(filasMisCuidadores, ajustes.getSala(), infoMisCuidadores);
+                } else {
+                    filasCuidadores.removeAllViews();
+                    for (String[] p : ajustes.getPacientes()) {
+                        TextView cab = new TextView(this);
+                        cab.setText(p[1]);
+                        cab.setTextColor(0xFF8D8A83);
+                        cab.setTextSize(12);
+                        cab.setPadding(0, 8, 0, 0);
+                        filasCuidadores.addView(cab);
+                        pintarListaCuidadores(filasCuidadores, p[0], null);
+                    }
+                }
+            }
+
             subestado.setText((e.vigilando ? "Vigilando" : "Detenido")
                     + "  ·  " + (e.conectado ? "Sala " + ajustes.getSala() : "Conectando..."));
 

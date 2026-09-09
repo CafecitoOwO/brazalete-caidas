@@ -108,6 +108,20 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         // Que esta haciendo: "Caminando", "Quieto, de pie", etc.
         public String actividad = "";
         public int pasos = -1;
+        /** Ultimos valores de aceleracion, para dibujar la onda en vivo. */
+        public float[] ondas = new float[0];
+        /** Historial corto de bateria, para la segunda grafica. */
+        public final java.util.ArrayList<Float> serieBat = new java.util.ArrayList<>();
+        /** Quien mas vigila a esta persona. Clave: id del cuidador. */
+        public final java.util.LinkedHashMap<String, Persona> cuidadores = new java.util.LinkedHashMap<>();
+        public String ubicacion = "";
+        public double lat, lon;
+    }
+
+    /** Un cuidador, con la ultima vez que entro a revisar. */
+    public static class Persona {
+        public String id, nombre;
+        public long ultimaVez;
     }
 
     public final java.util.LinkedHashMap<String, EstadoPac> pacientes =
@@ -148,6 +162,24 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
     // Salto de linea: JSONObject siempre lo escapa como \n dentro del texto,
     // asi que nunca aparece crudo y sirve de separador sin partir un evento.
     private static final String SEP = "\n";
+
+    /**
+     * Ultimos valores de aceleracion, ya diezmados.
+     *
+     * Se guarda uno de cada ocho para que quepan un par de segundos en
+     * dos docenas de numeros: suficiente para dibujar la onda en el
+     * telefono del cuidador sin inflar el mensaje.
+     */
+    private final float[] anillo = new float[24];
+    private int iAnillo = 0, nAnillo = 0, saltar = 0;
+
+    private float[] ondasRecientes() {
+        if (nAnillo < 4) return new float[0];
+        float[] r = new float[nAnillo];
+        int inicio = (iAnillo - nAnillo + anillo.length * 2) % anillo.length;
+        for (int k = 0; k < nAnillo; k++) r[k] = anillo[(inicio + k) % anillo.length];
+        return r;
+    }
 
     private long tCuenta = 0;
     private int nMuestras = 0;
@@ -283,6 +315,13 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
                                       + ultimoGiro[1] * ultimoGiro[1]
                                       + ultimoGiro[2] * ultimoGiro[2]);
 
+        if (++saltar >= 8) {
+            saltar = 0;
+            anillo[iAnillo] = estado.svm;
+            iAnillo = (iAnillo + 1) % anillo.length;
+            if (nAnillo < anillo.length) nAnillo++;
+        }
+
         nMuestras++;
         if (t - tVentana > 1000) {
             estado.hz = (int) (nMuestras * 1000L / (t - tVentana));
@@ -413,7 +452,13 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
 
             if (ahora % 3000 < 1100) {
                 nube.enviarVitales(0, nivelBateria(), estado.vigilando, estado.hz,
-                        estado.actividad, estado.pasos);
+                        estado.actividad, estado.pasos, ondasRecientes());
+                // El cuidador avisa de que sigue mirando.
+                if (!ajustes.esBrazalete()) {
+                    for (String s : ajustes.salasQueEscucho()) {
+                        nube.enviarPresencia(s, ajustes.getNombre());
+                    }
+                }
             }
 
             actualizarNotificacionVigilancia();
@@ -468,6 +513,21 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
             // el broker perdio el mensaje retenido.
             if (!historial.isEmpty() && ajustes.esBrazalete()) nube.enviarHistorial(soloEventos());
         }
+        avisar();
+    }
+
+    @Override public void alPresencia(String sala, String id, String nombre, long cuando) {
+        if (id == null || id.isEmpty()) return;
+        EstadoPac p = pac(sala);
+        Persona q = p.cuidadores.get(id);
+        if (q == null) { q = new Persona(); q.id = id; p.cuidadores.put(id, q); }
+        q.nombre = nombre;
+        q.ultimaVez = cuando > 0 ? cuando : System.currentTimeMillis();
+        avisar();
+    }
+
+    @Override public void alOndas(String sala, float[] valores) {
+        pac(sala).ondas = valores;
         avisar();
     }
 
@@ -621,6 +681,10 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         p.ultimo = System.currentTimeMillis();
         p.bat = bateria; p.hz = hz; p.bpm = bpm; p.vig = vigilando; p.pausa = pausa;
         p.actividad = actividad; p.pasos = pasos;
+        if (bateria > 0) {
+            p.serieBat.add((float) bateria);
+            while (p.serieBat.size() > 60) p.serieBat.remove(0);
+        }
 
         // Compatibilidad con la pantalla de un solo paciente
         estado.ultimoRemoto = p.ultimo;

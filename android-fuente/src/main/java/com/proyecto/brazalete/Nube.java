@@ -33,6 +33,10 @@ public class Nube implements MqttCallback {
         void alVitales(String sala, int bpm, int bateria, boolean vigilando, boolean pausa,
                        int hz, String actividad, int pasos);
         void alPerfil(String sala, String nombre);
+        /** Un cuidador aviso de que entro a revisar a esta persona. */
+        void alPresencia(String sala, String id, String nombre, long cuando);
+        /** Ultimos valores de aceleracion del paciente, para las graficas. */
+        void alOndas(String sala, float[] valores);
         void alHistorial(String sala, String json);
         /** canal: "pedido" | "p" (voz del paciente) | "c" (voz del cuidador) */
         void alAudio(String sala, String canal, String mime, String base64,
@@ -151,7 +155,7 @@ public class Nube implements MqttCallback {
     }
 
     public void enviarVitales(int bpm, int bateria, boolean vigilando, int hz,
-                              String actividad, int pasos) {
+                              String actividad, int pasos, float[] ondas) {
         try {
             JSONObject j = new JSONObject();
             j.put("bpm", bpm);
@@ -160,6 +164,14 @@ public class Nube implements MqttCallback {
             // Que esta haciendo la persona, no solo si esta viva la conexion.
             if (actividad != null && !actividad.isEmpty()) j.put("act", actividad);
             if (pasos >= 0) j.put("pasos", pasos);
+            // Unos pocos valores de aceleracion para que el cuidador pueda
+            // dibujar la onda en vivo. Van redondeados a dos decimales para
+            // que el mensaje siga siendo pequeño.
+            if (ondas != null && ondas.length > 0) {
+                org.json.JSONArray a = new org.json.JSONArray();
+                for (float v : ondas) a.put(Math.round(v * 100) / 100.0);
+                j.put("ondas", a);
+            }
             // La app nativa nunca esta "pausada": ese era justamente el
             // problema del navegador que vino a resolver.
             j.put("pausa", false);
@@ -177,6 +189,22 @@ public class Nube implements MqttCallback {
             j.put("d", base64);
             j.put("de", miId);
             publicar(sala, "audio/" + canal, j.toString(), false);
+        } catch (Exception ignored) { }
+    }
+
+    /**
+     * El cuidador avisa de que entro a revisar.
+     *
+     * Con varios cuidadores, si todos suponen que otro esta mirando no
+     * mira nadie. Publicando esto, todos ven cuando reviso cada uno.
+     */
+    public void enviarPresencia(String sala, String nombre) {
+        try {
+            JSONObject j = new JSONObject();
+            j.put("id", miId);
+            j.put("nombre", nombre == null || nombre.isEmpty() ? "Cuidador" : nombre);
+            j.put("ts", System.currentTimeMillis());
+            publicar(sala, "presencia/" + miId, j.toString(), true);
         } catch (Exception ignored) { }
     }
 
@@ -242,12 +270,22 @@ public class Nube implements MqttCallback {
                 escucha.alVitales(sala, j.optInt("bpm"), j.optInt("bat"),
                         j.optBoolean("vig"), j.optBoolean("pausa"), j.optInt("hz"),
                         j.optString("act", ""), j.optInt("pasos", -1));
+                org.json.JSONArray a = j.optJSONArray("ondas");
+                if (a != null && a.length() > 1) {
+                    float[] v = new float[a.length()];
+                    for (int i = 0; i < a.length(); i++) v[i] = (float) a.optDouble(i, 1);
+                    escucha.alOndas(sala, v);
+                }
             } else if (sub.equals("audio")) {
                 String canal = partes.length > 3 ? partes[3] : "";
                 JSONObject j = new JSONObject(txt);
                 if (miId.equals(j.optString("de"))) return;   // eco propio
                 escucha.alAudio(sala, canal, j.optString("t"), j.optString("d"),
                         j.optBoolean("activo"), j.optString("de"));
+            } else if (sub.equals("presencia")) {
+                JSONObject j = new JSONObject(txt);
+                escucha.alPresencia(sala, j.optString("id"), j.optString("nombre"),
+                        j.optLong("ts"));
             } else if (sub.equals("perfil")) {
                 JSONObject j = new JSONObject(txt);
                 escucha.alPerfil(sala, j.optString("nombre"));
