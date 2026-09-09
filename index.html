@@ -82,6 +82,11 @@
   </div>
 
   <div class="card">
+    <div class="etq">Quien te vigila</div>
+    <div id="misCuidadores"><div class="prog">Todavia no te vigila nadie.</div></div>
+  </div>
+
+  <div class="card">
     <div class="etq">Eventos</div>
     <div id="log"><div class="ev"><time>--:--</time><div>Sin eventos todavia</div></div></div>
   </div>
@@ -122,6 +127,12 @@
       <div class="grande" id="detBpm">--</div>
       <div class="prog">lpm</div>
     </div>
+  </div>
+
+  <div class="card">
+    <div class="etq">Quien mas la vigila</div>
+    <div id="detCuidadores"><div class="prog">Solo vos, por ahora.</div></div>
+    <div class="botones"><button class="sec" id="btnInvitarCuidador">Invitar a otro cuidador</button></div>
   </div>
 
   <div class="card">
@@ -279,8 +290,11 @@
   <div id="cuenta">25</div>
   <p id="alertaTxt">Si estas bien, cancela antes de que acabe la cuenta.</p>
   <div class="datos" id="alertaDatos"></div>
+  <div class="datos" id="micAviso" style="display:none;opacity:1;font-family:inherit"></div>
   <div class="botones">
     <button id="btnEstoyBien">Estoy bien, cancelar</button>
+    <button class="sec" id="btnEscuchar" style="display:none">Escuchar que pasa</button>
+    <button class="sec" id="btnHablar" style="display:none">Hablarle</button>
     <button class="sec" id="btnLlamar">Llamar a emergencias</button>
     <button class="sec" id="btnMapa" style="display:none">Ver ubicacion en el mapa</button>
   </div>

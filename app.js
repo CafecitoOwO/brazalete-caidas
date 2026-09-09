@@ -229,9 +229,83 @@ function nombreDe(sala) {
 function estadoDe(sala) {
   if (!estados[sala]) {
     estados[sala] = { nombre: '', estado: 'ok', ultimo: 0, vitales: {},
-                      ubic: null, eventos: [] };
+                      ubic: null, eventos: [], cuidadores: {} };
   }
+  if (!estados[sala].cuidadores) estados[sala].cuidadores = {};
   return estados[sala];
+}
+
+/* ================================================================
+   Presencia de los cuidadores
+   ================================================================
+
+   Un paciente puede tener varios cuidadores, y ahi aparece un problema
+   que no existe con uno solo: si todos suponen que otro esta mirando,
+   no mira nadie. Por eso cada cuidador publica cuando entro a revisar, y
+   todos (incluido el paciente) ven la lista con la ultima vez de cada
+   uno. Si nadie revisa en mucho tiempo, salta un aviso.                */
+
+const HORAS_SIN_REVISAR = 12;
+
+function publicarPresencia() {
+  if (!esCuidador() || !mqttCli || !mqttCli.connected) return;
+  const carga = JSON.stringify({
+    nombre: cfg.nombre || 'Cuidador', id: MI_ID, ts: Date.now()
+  });
+  cfg.pacientes.forEach(function (p) {
+    mqttCli.publish('brz/' + p.sala + '/presencia/' + MI_ID, carga, { retain: true });
+  });
+}
+setInterval(publicarPresencia, 60000);
+
+function listaCuidadores(sala) {
+  const c = estadoDe(sala).cuidadores;
+  return Object.keys(c).map(function (id) { return c[id]; })
+    .sort(function (a, b) { return b.ts - a.ts; });
+}
+
+function haceCuanto(ts) {
+  const s = Math.round((Date.now() - ts) / 1000);
+  if (s < 90) return 'ahora';
+  const m = Math.round(s / 60);
+  if (m < 60) return 'hace ' + m + ' min';
+  const h = Math.round(m / 60);
+  if (h < 48) return 'hace ' + h + ' h';
+  return 'hace ' + Math.round(h / 24) + ' dias';
+}
+
+function pintarCuidadores(idDestino, sala) {
+  const c = $(idDestino); if (!c) return;
+  const lista = listaCuidadores(sala);
+  if (!lista.length) {
+    c.innerHTML = '<div class="prog">' +
+      (idDestino === 'misCuidadores'
+        ? 'Todavia no te vigila nadie. Manda tu enlace desde el engranaje.'
+        : 'Solo vos, por ahora.') + '</div>';
+    return;
+  }
+  c.innerHTML = '';
+  lista.forEach(function (x) {
+    const reciente = Date.now() - x.ts < 300000;
+    const el = document.createElement('div');
+    el.className = 'grab';
+    el.innerHTML = '<div><b>' + (x.nombre || 'Cuidador') +
+      (x.id === MI_ID ? ' (vos)' : '') + '</b><small>' +
+      (reciente ? 'Conectado ahora' : 'Ultima vez que reviso: ' + haceCuanto(x.ts)) +
+      '</small></div><i class="luz ' + (reciente ? 'ok' : 'aviso') + '"></i>';
+    c.appendChild(el);
+  });
+
+  // Si hace demasiado que nadie entra a mirar, decirlo.
+  const masReciente = lista[0].ts;
+  if (Date.now() - masReciente > HORAS_SIN_REVISAR * 3600000) {
+    const av = document.createElement('div');
+    av.className = 'prog';
+    av.style.color = '#fbbf24';
+    av.innerHTML = '<b>Hace ' + haceCuanto(masReciente).replace('hace ', '') +
+      ' que ningun cuidador entra a revisar.</b>';
+    c.appendChild(av);
+  }
 }
 
 /* ================================================================
@@ -383,6 +457,7 @@ function mostrarAlerta(tipo, datos, sala) {
   }
   $('btnEstoyBien').textContent = quien ? 'Descartar aviso' : 'Estoy bien, cancelar';
   pintarMapa();
+  pintarMic();
 }
 /**
  * Aviso de ultimo minuto.
@@ -416,7 +491,12 @@ function cerrarAlerta() {
   $('alerta').className = '';
   clearInterval(cuentaAtras);
   pararSonido();
+  // El microfono se apaga con la alerta, sin excepciones.
+  if (escuchando) { pedirEscuchar(false); escuchando = false; }
+  pararDeEmitir();
+  colaAudio.length = 0;
   alertaDe = null;
+  pintarMic();
 }
 
 /**
@@ -934,6 +1014,134 @@ function pintarMapa() {
   $('btnMapaPanel').style.display = d ? '' : 'none';
 }
 
+/* ================================================================
+   Audio durante una alerta
+   ================================================================
+
+   Sirve para lo unico que hace falta cuando salta una alarma: oir si
+   la persona se queja, si esta hablando, o si fue una falsa alarma, y
+   poder decirle "ya vamos" mientras llega alguien.
+
+   Dos reglas que no se negocian, y conviene decirlas en la defensa:
+
+     1. SOLO funciona con una alerta en curso. Fuera de eso el microfono
+        ni se enciende. No es un sistema para escuchar a nadie.
+     2. El paciente SIEMPRE ve en su pantalla que lo estan escuchando.
+        Un microfono que se enciende a escondidas no es una funcion de
+        cuidado, es espionaje.
+
+   El audio va en trozos de segundo y medio. Cada trozo se graba entero
+   por separado para que se pueda reproducir solo; si se cortara un
+   flujo continuo, los pedazos sueltos no se podrian decodificar.      */
+
+let micStream = null, emitiendo = false, escuchando = false;
+const colaAudio = [];
+let reproduciendo = false;
+
+function tipoAudio() {
+  const tipos = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
+  for (let i = 0; i < tipos.length; i++) {
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported(tipos[i])) return tipos[i];
+  }
+  return '';
+}
+
+function hayAlertaEnCurso() { return !!alertaDe; }
+
+/** Enciende el microfono y empieza a mandar trozos. */
+async function empezarAEmitir(canal, salaDestino) {
+  if (emitiendo || !hayAlertaEnCurso()) return;
+  if (!navigator.mediaDevices || !window.MediaRecorder) {
+    log('Sin microfono', 'Este navegador no lo permite', 'rojo');
+    return;
+  }
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    log('Microfono denegado', e.message || '', 'rojo');
+    return;
+  }
+  emitiendo = true;
+  pintarMic();
+  (function trozo() {
+    if (!emitiendo || !micStream) return;
+    let mr;
+    try { mr = new MediaRecorder(micStream, { mimeType: tipoAudio(), audioBitsPerSecond: 24000 }); }
+    catch (e) { emitiendo = false; return; }
+    const partes = [];
+    mr.ondataavailable = function (e) { if (e.data && e.data.size) partes.push(e.data); };
+    mr.onstop = function () {
+      const b = new Blob(partes, { type: mr.mimeType });
+      const fr = new FileReader();
+      fr.onloadend = function () {
+        const b64 = String(fr.result).split(',')[1];
+        if (b64 && mqttCli && mqttCli.connected) {
+          mqttCli.publish('brz/' + salaDestino + '/audio/' + canal,
+            JSON.stringify({ t: mr.mimeType, d: b64, de: MI_ID }), { retain: false });
+        }
+        if (emitiendo) trozo();
+      };
+      fr.readAsDataURL(b);
+    };
+    mr.start();
+    setTimeout(function () { try { mr.stop(); } catch (e) {} }, 1500);
+  })();
+}
+
+function pararDeEmitir() {
+  emitiendo = false;
+  if (micStream) { micStream.getTracks().forEach(function (t) { t.stop(); }); micStream = null; }
+  pintarMic();
+}
+
+/** Reproduce los trozos uno detras de otro, sin pisarse. */
+function encolarAudio(tipo, b64) {
+  colaAudio.push({ tipo: tipo, d: b64 });
+  if (colaAudio.length > 8) colaAudio.shift();   // si se acumula, tirar lo viejo
+  if (!reproduciendo) siguienteAudio();
+}
+function siguienteAudio() {
+  const x = colaAudio.shift();
+  if (!x) { reproduciendo = false; return; }
+  reproduciendo = true;
+  try {
+    const bin = atob(x.d);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    const url = URL.createObjectURL(new Blob([arr], { type: x.tipo }));
+    const a = new Audio(url);
+    a.onended = a.onerror = function () { URL.revokeObjectURL(url); siguienteAudio(); };
+    a.play().catch(function () { URL.revokeObjectURL(url); siguienteAudio(); });
+  } catch (e) { siguienteAudio(); }
+}
+
+function pedirEscuchar(activo) {
+  if (!alertaDe || !mqttCli || !mqttCli.connected) return;
+  mqttCli.publish('brz/' + alertaDe + '/audio/pedido',
+    JSON.stringify({ activo: activo, de: MI_ID, nombre: cfg.nombre || 'Tu cuidador' }),
+    { retain: false });
+}
+
+function pintarMic() {
+  const soyPaciente = esPaciente();
+  $('btnEscuchar').style.display = (!soyPaciente && hayAlertaEnCurso()) ? '' : 'none';
+  $('btnHablar').style.display   = (!soyPaciente && hayAlertaEnCurso()) ? '' : 'none';
+  $('btnEscuchar').textContent = escuchando ? 'Dejar de escuchar' : 'Escuchar que pasa';
+  $('btnHablar').textContent   = emitiendo && !soyPaciente ? 'Dejar de hablar' : 'Hablarle';
+
+  const av = $('micAviso');
+  if (soyPaciente && emitiendo) {
+    av.style.display = '';
+    av.innerHTML = '<b>Tu cuidador te esta escuchando.</b><br>' +
+      'Habla si necesitas algo. Se apaga solo al cancelar la alerta.';
+  } else if (soyPaciente && escuchando) {
+    av.style.display = '';
+    av.innerHTML = '<b>Tu cuidador te esta hablando.</b>';
+  } else {
+    av.style.display = 'none';
+  }
+}
+
 function avisarTelegram(txt) {
   if (!cfg.tgToken || !cfg.tgChat) return;
   fetch('https://api.telegram.org/bot' + cfg.tgToken + '/sendMessage?chat_id=' +
@@ -977,6 +1185,8 @@ function conectarNube() {
     } else {
       salasQueEscucho().forEach(function (s) { mqttCli.subscribe('brz/' + s + '/#'); });
       if (esPaciente()) publicarPerfil();
+      // El cuidador avisa enseguida de que entro a mirar.
+      if (esCuidador()) publicarPresencia();
     }
     log('Conectado', url.split('/')[2], 'verde');
   });
@@ -996,7 +1206,31 @@ function conectarNube() {
     const sala = partes[1], sub = partes[2];
     const e = estadoDe(sala);
 
-    if (sub === 'perfil') {
+    if (sub === 'audio') {
+      const canal = partes[3] || '';
+      try {
+        const d = JSON.parse(txt);
+        if (d.de === MI_ID) return;                    // eco propio
+        if (canal === 'pedido' && esPaciente() && sala === cfg.sala) {
+          // Solo se enciende el microfono si hay una alerta en curso.
+          if (d.activo && hayAlertaEnCurso()) empezarAEmitir('p', cfg.sala);
+          else pararDeEmitir();
+        } else if (canal === 'p' && !esPaciente() && escuchando) {
+          encolarAudio(d.t, d.d);
+        } else if (canal === 'c' && esPaciente() && hayAlertaEnCurso()) {
+          escuchando = true; pintarMic();
+          encolarAudio(d.t, d.d);
+        }
+      } catch (err) {}
+      return;
+    }
+    if (sub === 'presencia') {
+      // brz/<sala>/presencia/<id de cuidador>
+      try {
+        const d = JSON.parse(txt);
+        if (d.id) e.cuidadores[d.id] = d;
+      } catch (err) {}
+    } else if (sub === 'perfil') {
       try { const d = JSON.parse(txt); e.nombre = d.nombre || ''; e.rol = d.rol; e.desde = d.desde; }
       catch (err) {}
     } else if (sub === 'vitales') {
@@ -1338,6 +1572,7 @@ function pintarDetalle() {
       c.appendChild(el);
     });
   }
+  pintarCuidadores('detCuidadores', salaActual);
   pintarMapa();
 }
 
@@ -1594,6 +1829,17 @@ $('btnQuitarPaciente').onclick = function () {
   salaActual = null; ir('p'); conectarNube();
 };
 $('btnLlamarDet').onclick = function () { location.href = 'tel:' + cfg.tel; };
+$('btnInvitarCuidador').onclick = function () {
+  if (!salaActual) return;
+  const url = location.origin + location.pathname + '?sala=' + encodeURIComponent(salaActual) +
+              '&modo=cuidador&nombre=' + encodeURIComponent(nombreDe(salaActual));
+  const txt = 'Ayudame a cuidar a ' + nombreDe(salaActual) + '. Abri este enlace:\n' + url;
+  if (navigator.share) navigator.share({ title: 'CuidAPP', text: txt, url: url }).catch(function () {});
+  else if (navigator.clipboard) navigator.clipboard.writeText(url)
+    .then(function () { alert('Enlace copiado:\n\n' + url); })
+    .catch(function () { prompt('Copia este enlace:', url); });
+  else prompt('Copia este enlace:', url);
+};
 
 $('btnVigilar').onclick = alternarVigilancia;
 $('btnSos').onclick = function () { iniAudio(); procesarEstado('SOS_MANUAL', false); };
@@ -1619,6 +1865,17 @@ $('btnEstoyBien').onclick = function () {
   procesarEstado('CANCELADA', false, sala);
 };
 $('btnLlamar').onclick = function () { location.href = 'tel:' + cfg.tel; };
+$('btnEscuchar').onclick = function () {
+  escuchando = !escuchando;
+  pedirEscuchar(escuchando);
+  if (!escuchando) colaAudio.length = 0;
+  pintarMic();
+  log(escuchando ? 'Escuchando al paciente' : 'Dejaste de escuchar', '', 'ambar');
+};
+$('btnHablar').onclick = function () {
+  if (emitiendo) { pararDeEmitir(); return; }
+  empezarAEmitir('c', alertaDe || cfg.sala);
+};
 $('btnMapa').onclick = function () {
   const u = alertaDe ? (estadoDe(alertaDe).ubic || ultimaUbic) : ultimaUbic;
   if (u) window.open(enlaceMapa(u), '_blank');
@@ -1674,7 +1931,11 @@ window.addEventListener('resize', function () {
   pintarHistorial();
 });
 
-setInterval(function () { pintarPacientes(); pintarDetalle(); pintarAdmin(); }, 2000);
+setInterval(function () {
+  pintarPacientes(); pintarDetalle(); pintarAdmin();
+  // El paciente ve quien lo esta vigilando y hace cuanto que no lo miran.
+  if (esPaciente()) pintarCuidadores('misCuidadores', cfg.sala);
+}, 2000);
 
 pintarChips(); pintarLista(); pintarHistorial();
 aplicarRol(); conectarNube();
