@@ -191,6 +191,13 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
 
         pintarModo();
         pedirPermisos();
+
+        // El cuidador no tiene que acordarse de activar nada: si abre la
+        // app es porque quiere estar pendiente. El paciente si decide
+        // cuando empieza a vigilar, porque implica sus sensores.
+        if (!ajustes.esBrazalete() && ServicioVigilancia.get() == null) {
+            mandarAlServicio(ServicioVigilancia.ACCION_INICIAR);
+        }
     }
 
     @Override protected void onResume() {
@@ -419,6 +426,9 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
         tarjetaHistorial.setVisibility(brz ? View.GONE : View.VISIBLE);
         // El paciente ve quien lo vigila; el cuidador ve a sus pacientes.
         tarjetaMisCuidadores.setVisibility(brz ? View.VISIBLE : View.GONE);
+        // El cuidador no detecta nada con sus propios sensores; esa tarjeta
+        // solo confunde en su telefono.
+        findViewById(R.id.tarjetaDeteccion).setVisibility(brz ? View.VISIBLE : View.GONE);
         pintarTarjetasPacientes();
         // El boton se queda en los dos modos: en cuidador enciende la escucha
         // en segundo plano, que es lo que hace que suene con el movil guardado.
@@ -474,8 +484,6 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
             }
 
             if (!ajustes.esBrazalete()) {
-                pintarFilasPacientes();
-
                 // El historial vive en ESTE telefono: el del cuidador esta
                 // siempre escuchando, asi que hace de archivo sin servidor.
                 if (e.registros == 0) {
@@ -539,75 +547,6 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
                 }
             }
         });
-    }
-
-    /**
-     * Una fila por persona vigilada, con su semaforo.
-     *
-     * El cuidador puede tener a varias a la vez, asi que no vale con una
-     * sola tarjeta: hay que ver de un vistazo cual esta mal.
-     */
-    private void pintarFilasPacientes() {
-        java.util.List<String[]> lista = ajustes.getPacientes();
-        filasPacientes.removeAllViews();
-
-        if (lista.isEmpty()) {
-            infoPaciente.setText("Todavia no vigilas a nadie.\n\n"
-                    + "Pedile a esa persona que abra CuidAPP, entre en el engranaje y toque "
-                    + "\"Enviar enlace al cuidador\". El codigo que te pase va aca abajo.");
-            infoPaciente.setVisibility(View.VISIBLE);
-            return;
-        }
-        infoPaciente.setVisibility(View.GONE);
-
-        ServicioVigilancia s = ServicioVigilancia.get();
-        for (String[] p : lista) {
-            String sala = p[0], nombre = p[1];
-            ServicioVigilancia.EstadoPac ep = s != null ? s.pacientes.get(sala) : null;
-
-            String txt; int color;
-            if (ep == null || ep.ultimo == 0) {
-                txt = "Sin datos · todavia no se conecto"; color = R.color.apagado;
-            } else if ("caida".equals(ep.estado)) {
-                txt = "CAIDA CONFIRMADA · contacta ahora"; color = R.color.rojo;
-            } else if ("prealerta".equals(ep.estado)) {
-                txt = "Posible caida · esperando"; color = R.color.ambar;
-            } else {
-                long seg = (System.currentTimeMillis() - ep.ultimo) / 1000;
-                if (seg > 45) {
-                    txt = "SIN SEÑAL desde hace "
-                        + (seg < 120 ? seg + " s" : (seg / 60) + " min");
-                    color = R.color.rojo;
-                } else if (ep.pausa) {
-                    txt = "Vigilancia pausada · cambio de app"; color = R.color.ambar;
-                } else if (!ep.vig) {
-                    txt = "Vigilancia detenida"; color = R.color.ambar;
-                } else {
-                    txt = "Todo normal · hace " + seg + " s"
-                        + (ep.bat >= 0 ? "  ·  bateria " + ep.bat + "%" : "");
-                    color = R.color.verde;
-                }
-            }
-
-            LinearLayout fila = new LinearLayout(this);
-            fila.setOrientation(LinearLayout.VERTICAL);
-            fila.setPadding(0, 12, 0, 12);
-
-            TextView tn = new TextView(this);
-            tn.setText(nombre);
-            tn.setTextColor(getColor(R.color.texto));
-            tn.setTextSize(17);
-            tn.setTypeface(null, android.graphics.Typeface.BOLD);
-
-            TextView te = new TextView(this);
-            te.setText(txt);
-            te.setTextColor(getColor(color));
-            te.setTextSize(13);
-
-            fila.addView(tn);
-            fila.addView(te);
-            filasPacientes.addView(fila);
-        }
     }
 
     /** Escribe el historial como CSV en la carpeta Descargas del telefono. */

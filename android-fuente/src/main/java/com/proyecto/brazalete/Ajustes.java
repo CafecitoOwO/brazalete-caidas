@@ -28,6 +28,23 @@ public class Ajustes {
     public String getTelefono()        { return p.getString("tel", "112"); }
     public void   setTelefono(String v){ p.edit().putString("tel", v).apply(); }
 
+    /**
+     * Identificador estable de este telefono.
+     *
+     * Antes se generaba uno nuevo en cada arranque, y como la presencia
+     * se publica retenida, cada reinicio dejaba un cuidador fantasma en
+     * la lista. Guardandolo, el mismo telefono es siempre el mismo.
+     */
+    public String getIdDispositivo() {
+        String id = p.getString("idDispositivo", "");
+        if (id.isEmpty()) {
+            id = Long.toHexString(new java.util.Random().nextLong());
+            id = id.length() > 8 ? id.substring(0, 8) : id;
+            p.edit().putString("idDispositivo", id).apply();
+        }
+        return id;
+    }
+
     public String getNombre()          { return p.getString("nombre", ""); }
     public void   setNombre(String v)  { p.edit().putString("nombre", v).apply(); }
 

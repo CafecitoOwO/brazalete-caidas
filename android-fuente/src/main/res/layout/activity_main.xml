@@ -250,12 +250,13 @@
                     android:textSize="13sp" />
             </LinearLayout>
 
-            <!-- Deteccion -->
+            <!-- Deteccion (solo tiene sentido en el telefono del paciente) -->
             <LinearLayout
+                android:id="@+id/tarjetaDeteccion"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="12dp"
-                android:background="@color/tarjeta"
+                android:background="@drawable/tarjeta"
                 android:orientation="vertical"
                 android:padding="18dp">
 

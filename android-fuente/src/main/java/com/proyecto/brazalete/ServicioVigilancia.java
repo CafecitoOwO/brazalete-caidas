@@ -214,7 +214,8 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         }
 
         nube = new Nube(this);
-        nube.configurar(ajustes.salasQueEscucho(), ajustes.esBrazalete(), ajustes.getSala());
+        nube.configurar(ajustes.salasQueEscucho(), ajustes.esBrazalete(), ajustes.getSala(),
+                ajustes.getIdDispositivo());
         nube.conectar();
 
         hilo.post(latido);
@@ -451,8 +452,13 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
             }
 
             if (ahora % 3000 < 1100) {
-                nube.enviarVitales(0, nivelBateria(), estado.vigilando, estado.hz,
-                        estado.actividad, estado.pasos, ondasRecientes());
+                // Solo el paciente publica sus constantes. Antes lo hacia
+                // tambien el cuidador, que no tiene nada que contar de si
+                // mismo y ensuciaba los datos de la sala que vigilaba.
+                if (ajustes.esBrazalete()) {
+                    nube.enviarVitales(0, nivelBateria(), estado.vigilando, estado.hz,
+                            estado.actividad, estado.pasos, ondasRecientes());
+                }
                 // El cuidador avisa de que sigue mirando.
                 if (!ajustes.esBrazalete()) {
                     for (String s : ajustes.salasQueEscucho()) {

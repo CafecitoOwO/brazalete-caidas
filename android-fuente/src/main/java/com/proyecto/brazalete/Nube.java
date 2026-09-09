@@ -52,7 +52,8 @@ public class Nube implements MqttCallback {
             "ssl://test.mosquitto.org:8886"
     };
 
-    private final String miId = Long.toHexString(new java.util.Random().nextLong()).substring(0, 8);
+    /** Estable entre arranques: lo da Ajustes y se guarda en el telefono. */
+    private String miId = "sinid";
     private final Escucha escucha;
 
     private List<String> salas = new ArrayList<>();
@@ -65,10 +66,12 @@ public class Nube implements MqttCallback {
 
     public Nube(Escucha escucha) { this.escucha = escucha; }
 
-    public void configurar(List<String> salas, boolean esBrazalete, String salaPropia) {
+    public void configurar(List<String> salas, boolean esBrazalete, String salaPropia,
+                           String idDispositivo) {
         this.salas = salas;
         this.esBrazalete = esBrazalete;
         this.salaPropia = salaPropia;
+        if (idDispositivo != null && !idDispositivo.isEmpty()) this.miId = idDispositivo;
     }
 
     public boolean conectado() { return cli != null && cli.isConnected(); }
