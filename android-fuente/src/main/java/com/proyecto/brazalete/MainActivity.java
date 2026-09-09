@@ -31,7 +31,9 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
     private Ajustes ajustes;
 
     private TextView titulo, subestado, estadoVig, datosSensor, notaSegundoPlano;
-    private TextView estadoPaciente, infoPaciente;
+    private TextView infoPaciente;
+    private LinearLayout filasPacientes;
+    private EditText campoNombre;
     private TextView alertaTitulo, alertaCuenta, alertaTexto, alertaDatos;
     private LinearLayout tarjetaCuidador, tarjetaHistorial, pantallaAlerta;
     private TextView statsHistorial;
@@ -52,8 +54,9 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
         tarjetaCuidador  = findViewById(R.id.tarjetaCuidador);
         tarjetaHistorial = findViewById(R.id.tarjetaHistorial);
         statsHistorial   = findViewById(R.id.statsHistorial);
-        estadoPaciente   = findViewById(R.id.estadoPaciente);
         infoPaciente     = findViewById(R.id.infoPaciente);
+        filasPacientes   = findViewById(R.id.filasPacientes);
+        campoNombre      = findViewById(R.id.campoNombre);
         pantallaAlerta   = findViewById(R.id.pantallaAlerta);
         alertaTitulo     = findViewById(R.id.alertaTitulo);
         alertaCuenta     = findViewById(R.id.alertaCuenta);
@@ -65,6 +68,24 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
         modoCuidador     = findViewById(R.id.modoCuidador);
 
         campoSala.setText(ajustes.getSala());
+        campoNombre.setText(ajustes.getNombre());
+
+        findViewById(R.id.btnAgregarPaciente).setOnClickListener(v -> {
+            EditText cn = findViewById(R.id.campoNuevoNombre);
+            EditText cc = findViewById(R.id.campoNuevoCodigo);
+            String cod = cc.getText().toString().trim();
+            String nom = cn.getText().toString().trim();
+            if (cod.isEmpty()) {
+                Toast.makeText(this, "Falta el codigo de la persona", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            ajustes.agregarPaciente(cod, nom.isEmpty() ? cod : nom);
+            cn.setText(""); cc.setText("");
+            Toast.makeText(this, "Agregado. Reconectando...", Toast.LENGTH_SHORT).show();
+            mandarAlServicio(ServicioVigilancia.ACCION_PARAR);
+            btnVigilar.postDelayed(() ->
+                    mandarAlServicio(ServicioVigilancia.ACCION_INICIAR), 700);
+        });
         modoBrazalete.setChecked(ajustes.esBrazalete());
         modoCuidador.setChecked(!ajustes.esBrazalete());
 
@@ -100,6 +121,7 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
         findViewById(R.id.btnGuardar).setOnClickListener(v -> {
             String sala = campoSala.getText().toString().trim();
             if (!sala.isEmpty()) ajustes.setSala(sala);
+            ajustes.setNombre(campoNombre.getText().toString().trim());
             ajustes.setModo(modoBrazalete.isChecked() ? "brazalete" : "cuidador");
             // Reiniciar el servicio para que tome la sala y el modo nuevos.
             mandarAlServicio(ServicioVigilancia.ACCION_PARAR);
@@ -115,11 +137,15 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
         findViewById(R.id.btnCompartir).setOnClickListener(v -> {
             String sala = campoSala.getText().toString().trim();
             if (sala.isEmpty()) sala = ajustes.getSala();
-            String url = WEB + "?sala=" + Uri.encode(sala) + "&modo=cuidador";
+            String nom = ajustes.getNombre().isEmpty() ? "Paciente" : ajustes.getNombre();
+            String url = WEB + "?sala=" + Uri.encode(sala) + "&modo=cuidador"
+                       + "&nombre=" + Uri.encode(nom);
             Intent i = new Intent(Intent.ACTION_SEND);
             i.setType("text/plain");
             i.putExtra(Intent.EXTRA_TEXT,
-                    "Abri este enlace para vigilar el brazalete:\n" + url);
+                    "Vigilame con CuidAPP. Abri este enlace:\n" + url
+                  + "\n\nPara que te avise con el telefono guardado, instala la app "
+                  + "desde el boton verde que sale ahi.");
             startActivity(Intent.createChooser(i, "Enviar al cuidador"));
         });
 
@@ -147,7 +173,7 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
 
     private void pintarModo() {
         boolean brz = ajustes.esBrazalete();
-        titulo.setText(brz ? "Brazalete" : "Panel del cuidador");
+        titulo.setText(brz ? "CuidAPP" : "CuidAPP - Cuidador");
         tarjetaCuidador.setVisibility(brz ? View.GONE : View.VISIBLE);
         tarjetaHistorial.setVisibility(brz ? View.GONE : View.VISIBLE);
         // El boton se queda en los dos modos: en cuidador enciende la escucha
@@ -180,32 +206,7 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
             }
 
             if (!ajustes.esBrazalete()) {
-                if (e.estadoPaciente.equals("caida")) {
-                    estadoPaciente.setText("CAIDA CONFIRMADA");
-                    estadoPaciente.setTextColor(getColor(R.color.rojo));
-                } else if (e.estadoPaciente.equals("prealerta")) {
-                    estadoPaciente.setText("Posible caida");
-                    estadoPaciente.setTextColor(getColor(R.color.ambar));
-                } else if (e.ultimoRemoto == 0) {
-                    estadoPaciente.setText("Sin datos");
-                    estadoPaciente.setTextColor(getColor(R.color.apagado));
-                } else {
-                    estadoPaciente.setText("Todo normal");
-                    estadoPaciente.setTextColor(getColor(R.color.verde));
-                }
-                if (e.ultimoRemoto == 0) {
-                    infoPaciente.setText("Esperando al brazalete. Comprueba que el otro "
-                            + "telefono use la misma sala.");
-                } else {
-                    long seg = (System.currentTimeMillis() - e.ultimoRemoto) / 1000;
-                    StringBuilder sb = new StringBuilder();
-                    sb.append("Ultimo dato hace ").append(seg).append(" s");
-                    if (e.batPaciente >= 0) sb.append("   ·   Bateria ").append(e.batPaciente).append('%');
-                    if (e.hzPaciente > 0)   sb.append("   ·   ").append(e.hzPaciente).append(" Hz");
-                    if (e.pausaRemota) sb.append("\nVIGILANCIA PAUSADA: el paciente cambio de app.");
-                    else if (seg > 45) sb.append("\nSIN SEÑAL: no se estan detectando caidas.");
-                    infoPaciente.setText(sb.toString());
-                }
+                pintarFilasPacientes();
 
                 // El historial vive en ESTE telefono: el del cuidador esta
                 // siempre escuchando, asi que hace de archivo sin servidor.
@@ -233,15 +234,91 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
                 pantallaAlerta.setVisibility(View.VISIBLE);
                 getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                 boolean conf = e.alerta.equals("confirmada");
-                alertaTitulo.setText(conf ? "CAIDA CONFIRMADA" : "Posible caida detectada");
+                boolean ajeno = !e.quienAlerta.isEmpty();
+                alertaTitulo.setText(conf
+                        ? (ajeno ? "CAIDA DE " + e.quienAlerta.toUpperCase() : "CAIDA CONFIRMADA")
+                        : (ajeno ? "Posible caida de " + e.quienAlerta : "Posible caida detectada"));
                 alertaTexto.setText(conf
                         ? "No hubo respuesta. Contacta con la persona ahora mismo."
-                        : "Si estas bien, cancela antes de que acabe la cuenta.");
+                        : (ajeno ? "Si sabes que esta bien, descarta el aviso."
+                                 : "Si estas bien, cancela antes de que acabe la cuenta."));
+                findViewById(R.id.btnEstoyBien).post(() ->
+                        ((Button) findViewById(R.id.btnEstoyBien)).setText(
+                                ajeno ? "Descartar aviso" : "Estoy bien, cancelar"));
                 alertaCuenta.setVisibility(conf ? View.GONE : View.VISIBLE);
                 alertaCuenta.setText(String.valueOf(e.segundosRestantes));
                 alertaDatos.setText(e.datosAlerta.replace(";", "   "));
             }
         });
+    }
+
+    /**
+     * Una fila por persona vigilada, con su semaforo.
+     *
+     * El cuidador puede tener a varias a la vez, asi que no vale con una
+     * sola tarjeta: hay que ver de un vistazo cual esta mal.
+     */
+    private void pintarFilasPacientes() {
+        java.util.List<String[]> lista = ajustes.getPacientes();
+        filasPacientes.removeAllViews();
+
+        if (lista.isEmpty()) {
+            infoPaciente.setText("Todavia no vigilas a nadie.\n\n"
+                    + "Pedile a esa persona que abra CuidAPP, entre en el engranaje y toque "
+                    + "\"Enviar enlace al cuidador\". El codigo que te pase va aca abajo.");
+            infoPaciente.setVisibility(View.VISIBLE);
+            return;
+        }
+        infoPaciente.setVisibility(View.GONE);
+
+        ServicioVigilancia s = ServicioVigilancia.get();
+        for (String[] p : lista) {
+            String sala = p[0], nombre = p[1];
+            ServicioVigilancia.EstadoPac ep = s != null ? s.pacientes.get(sala) : null;
+
+            String txt; int color;
+            if (ep == null || ep.ultimo == 0) {
+                txt = "Sin datos · todavia no se conecto"; color = R.color.apagado;
+            } else if ("caida".equals(ep.estado)) {
+                txt = "CAIDA CONFIRMADA · contacta ahora"; color = R.color.rojo;
+            } else if ("prealerta".equals(ep.estado)) {
+                txt = "Posible caida · esperando"; color = R.color.ambar;
+            } else {
+                long seg = (System.currentTimeMillis() - ep.ultimo) / 1000;
+                if (seg > 45) {
+                    txt = "SIN SEÑAL desde hace "
+                        + (seg < 120 ? seg + " s" : (seg / 60) + " min");
+                    color = R.color.rojo;
+                } else if (ep.pausa) {
+                    txt = "Vigilancia pausada · cambio de app"; color = R.color.ambar;
+                } else if (!ep.vig) {
+                    txt = "Vigilancia detenida"; color = R.color.ambar;
+                } else {
+                    txt = "Todo normal · hace " + seg + " s"
+                        + (ep.bat >= 0 ? "  ·  bateria " + ep.bat + "%" : "");
+                    color = R.color.verde;
+                }
+            }
+
+            LinearLayout fila = new LinearLayout(this);
+            fila.setOrientation(LinearLayout.VERTICAL);
+            fila.setPadding(0, 12, 0, 12);
+
+            TextView tn = new TextView(this);
+            tn.setText(nombre);
+            tn.setTextColor(getColor(R.color.texto));
+            tn.setTextSize(17);
+            tn.setTypeface(null, android.graphics.Typeface.BOLD);
+
+            TextView te = new TextView(this);
+            te.setText(txt);
+            te.setTextColor(getColor(color));
+            te.setTextSize(13);
+
+            fila.addView(tn);
+            fila.addView(te);
+            filasPacientes.addView(fila);
+        }
     }
 
     /** Escribe el historial como CSV en la carpeta Descargas del telefono. */

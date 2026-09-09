@@ -10,22 +10,29 @@ import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 import org.json.JSONObject;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
- * Conexion con el cuidador.
+ * Conexion con los demas telefonos.
  *
  * Usa el mismo broker, los mismos temas y el mismo formato de mensaje que
- * la app web, asi que un telefono con la app nativa y otro con la web se
- * entienden sin tocar nada. La unica diferencia es el transporte: aqui MQTT
- * sobre TLS directo, en el navegador sobre WebSocket, porque el navegador no
- * puede abrir sockets normales.
+ * la version web, asi que un telefono con la app nativa y otro con la web
+ * se entienden sin tocar nada. La unica diferencia es el transporte: aqui
+ * MQTT sobre TLS directo, en el navegador sobre WebSocket, porque el
+ * navegador no puede abrir sockets normales.
+ *
+ * Un cuidador puede escuchar a varias personas a la vez: se suscribe a una
+ * sala por cada una.
  */
 public class Nube implements MqttCallback {
 
     public interface Escucha {
         void alConectar(boolean conectado, String servidor);
-        void alEvento(String tipo, String datos, boolean viejo);
-        /** Datos periodicos del paciente. Solo los recibe el cuidador. */
-        void alVitales(int bpm, int bateria, boolean vigilando, boolean pausa, int hz);
+        void alEvento(String sala, String tipo, String datos, boolean viejo, boolean prueba);
+        void alVitales(String sala, int bpm, int bateria, boolean vigilando, boolean pausa, int hz);
+        void alPerfil(String sala, String nombre);
+        void alHistorial(String sala, String json);
     }
 
     private static final String TAG = "Nube";
@@ -39,8 +46,10 @@ public class Nube implements MqttCallback {
 
     private final String miId = Long.toHexString(new java.util.Random().nextLong()).substring(0, 8);
     private final Escucha escucha;
-    private String sala;
-    private boolean esBrazalete;
+
+    private List<String> salas = new ArrayList<>();
+    private String salaPropia = "";
+    private boolean esBrazalete = true;
 
     private MqttClient cli;
     private int iServidor = 0;
@@ -48,14 +57,15 @@ public class Nube implements MqttCallback {
 
     public Nube(Escucha escucha) { this.escucha = escucha; }
 
-    public void configurar(String sala, boolean esBrazalete) {
-        this.sala = sala;
+    public void configurar(List<String> salas, boolean esBrazalete, String salaPropia) {
+        this.salas = salas;
         this.esBrazalete = esBrazalete;
+        this.salaPropia = salaPropia;
     }
 
     public boolean conectado() { return cli != null && cli.isConnected(); }
 
-    private String tema(String sub) { return "brz/" + sala + "/" + sub; }
+    private String tema(String sala, String sub) { return "brz/" + sala + "/" + sub; }
 
     /** Conecta en segundo plano. Reintenta solo, rotando de servidor. */
     public void conectar() {
@@ -66,7 +76,7 @@ public class Nube implements MqttCallback {
                 String url = SERVIDORES[iServidor];
                 try {
                     cerrarSilencioso();
-                    cli = new MqttClient(url, "brz_" + miId, new MemoryPersistence());
+                    cli = new MqttClient(url, "cuidapp_" + miId, new MemoryPersistence());
                     cli.setCallback(this);
 
                     MqttConnectOptions o = new MqttConnectOptions();
@@ -76,11 +86,7 @@ public class Nube implements MqttCallback {
                     o.setKeepAliveInterval(30);
                     cli.connect(o);
 
-                    cli.subscribe(tema("evento"), 1);
-                    if (!esBrazalete) {
-                        cli.subscribe(tema("vitales"), 0);
-                        cli.subscribe(tema("ubicacion"), 1);
-                    }
+                    for (String s : salas) cli.subscribe("brz/" + s + "/#", 1);
                     if (escucha != null) escucha.alConectar(true, url);
                     return;
                 } catch (Exception e) {
@@ -104,26 +110,39 @@ public class Nube implements MqttCallback {
         cli = null;
     }
 
-    private void publicar(String sub, String carga, boolean retener) {
-        if (!conectado()) return;
+    private void publicar(String sala, String sub, String carga, boolean retener) {
+        if (!conectado() || sala == null || sala.isEmpty()) return;
         try {
             MqttMessage m = new MqttMessage(carga.getBytes("UTF-8"));
             m.setQos(1);
             m.setRetained(retener);
-            cli.publish(tema(sub), m);
+            cli.publish(tema(sala, sub), m);
         } catch (Exception e) {
             Log.w(TAG, "no se pudo publicar en " + sub + ": " + e.getMessage());
         }
     }
 
-    public void enviarEvento(String tipo, String datos) {
+    /** Quien soy, para que el otro lado muestre un nombre y no un codigo. */
+    public void enviarPerfil(String nombre, String rol) {
+        try {
+            JSONObject j = new JSONObject();
+            j.put("nombre", nombre == null || nombre.isEmpty() ? "Paciente" : nombre);
+            j.put("rol", rol);
+            j.put("id", miId);
+            j.put("desde", System.currentTimeMillis());
+            publicar(salaPropia, "perfil", j.toString(), true);
+        } catch (Exception ignored) { }
+    }
+
+    public void enviarEvento(String sala, String tipo, String datos, boolean prueba) {
         try {
             JSONObject j = new JSONObject();
             j.put("tipo", tipo);
             j.put("datos", datos == null ? "" : datos);
             j.put("ts", System.currentTimeMillis());
             j.put("de", miId);
-            publicar("evento", j.toString(), true);
+            j.put("prueba", prueba);
+            publicar(sala, "evento", j.toString(), true);
         } catch (Exception ignored) { }
     }
 
@@ -138,28 +157,7 @@ public class Nube implements MqttCallback {
             j.put("pausa", false);
             j.put("hz", hz);
             j.put("t", System.currentTimeMillis());
-            publicar("vitales", j.toString(), true);
-        } catch (Exception ignored) { }
-    }
-
-    /**
-     * Publica la lista de eventos como mensaje retenido.
-     *
-     * Es el truco que evita montar un servidor: el broker guarda el ultimo
-     * mensaje retenido de cada tema y se lo entrega a quien se suscriba
-     * despues. Asi el cuidador ve el historial aunque haya tenido la app
-     * cerrada durante horas.
-     */
-    public void enviarHistorial(java.util.List<String> eventosJson) {
-        try {
-            StringBuilder sb = new StringBuilder("{\"evs\":[");
-            int desde = Math.max(0, eventosJson.size() - 60);
-            for (int i = desde; i < eventosJson.size(); i++) {
-                if (i > desde) sb.append(',');
-                sb.append(eventosJson.get(i));
-            }
-            sb.append("]}");
-            publicar("historial", sb.toString(), true);
+            publicar(salaPropia, "vitales", j.toString(), true);
         } catch (Exception ignored) { }
     }
 
@@ -170,7 +168,27 @@ public class Nube implements MqttCallback {
             j.put("lon", lon);
             j.put("acc", precision);
             j.put("ts", System.currentTimeMillis());
-            publicar("ubicacion", j.toString(), true);
+            publicar(salaPropia, "ubicacion", j.toString(), true);
+        } catch (Exception ignored) { }
+    }
+
+    /**
+     * Publica la lista de eventos como mensaje retenido.
+     *
+     * El broker guarda el ultimo mensaje retenido de cada tema y se lo
+     * entrega a quien se suscriba despues, asi que el cuidador ve el
+     * historial aunque haya tenido la app cerrada durante horas.
+     */
+    public void enviarHistorial(List<String> eventosJson) {
+        try {
+            StringBuilder sb = new StringBuilder("{\"evs\":[");
+            int desde = Math.max(0, eventosJson.size() - 60);
+            for (int i = desde; i < eventosJson.size(); i++) {
+                if (i > desde) sb.append(',');
+                sb.append(eventosJson.get(i));
+            }
+            sb.append("]}");
+            publicar(salaPropia, "historial", sb.toString(), true);
         } catch (Exception ignored) { }
     }
 
@@ -182,27 +200,29 @@ public class Nube implements MqttCallback {
 
     @Override public void messageArrived(String tema, MqttMessage msg) {
         String txt = new String(msg.getPayload());
-        if (txt.isEmpty()) return;
+        if (txt.isEmpty() || escucha == null) return;
 
-        if (tema.endsWith("/vitales")) {
-            try {
-                JSONObject j = new JSONObject(txt);
-                if (escucha != null) {
-                    escucha.alVitales(j.optInt("bpm"), j.optInt("bat"),
-                            j.optBoolean("vig"), j.optBoolean("pausa"), j.optInt("hz"));
-                }
-            } catch (Exception ignored) { }
-            return;
-        }
+        String[] partes = tema.split("/");
+        if (partes.length < 3) return;
+        String sala = partes[1], sub = partes[2];
 
-        if (!tema.endsWith("/evento")) return;
         try {
-            JSONObject j = new JSONObject(txt);
-            if (miId.equals(j.optString("de"))) return;   // eco propio
-            long ts = j.optLong("ts", 0);
-            boolean viejo = ts > 0 && (System.currentTimeMillis() - ts) > 300000;
-            if (escucha != null) {
-                escucha.alEvento(j.optString("tipo"), j.optString("datos"), viejo);
+            if (sub.equals("vitales")) {
+                JSONObject j = new JSONObject(txt);
+                escucha.alVitales(sala, j.optInt("bpm"), j.optInt("bat"),
+                        j.optBoolean("vig"), j.optBoolean("pausa"), j.optInt("hz"));
+            } else if (sub.equals("perfil")) {
+                JSONObject j = new JSONObject(txt);
+                escucha.alPerfil(sala, j.optString("nombre"));
+            } else if (sub.equals("historial")) {
+                escucha.alHistorial(sala, txt);
+            } else if (sub.equals("evento")) {
+                JSONObject j = new JSONObject(txt);
+                if (miId.equals(j.optString("de"))) return;   // eco propio
+                long ts = j.optLong("ts", 0);
+                boolean viejo = ts > 0 && (System.currentTimeMillis() - ts) > 300000;
+                escucha.alEvento(sala, j.optString("tipo"), j.optString("datos"),
+                        viejo, j.optBoolean("prueba"));
             }
         } catch (Exception ignored) { }
     }

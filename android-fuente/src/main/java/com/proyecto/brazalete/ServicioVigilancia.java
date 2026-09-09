@@ -73,6 +73,8 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         public String  datosAlerta = "";
         public int     segundosRestantes = 0;
         public String  estadoPaciente = "ok";
+        public String  salaAlerta = "";     // de quien es la alerta en curso
+        public String  quienAlerta = "";    // su nombre, vacio si es propia
         public long    ultimoRemoto = 0;
         // Lo que llega del paciente (solo en modo cuidador)
         public int     batPaciente = -1;
@@ -85,6 +87,24 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         public int     porcentajeVigilancia = -1;
         public long    desde = 0;
         public int     registros = 0;
+    }
+
+    /** Lo que sabemos de cada persona vigilada. */
+    public static class EstadoPac {
+        public String sala, nombre = "";
+        public int bat = -1, hz = 0, bpm = 0;
+        public boolean vig = false, pausa = false;
+        public long ultimo = 0;
+        public String estado = "ok";      // ok | prealerta | caida
+    }
+
+    public final java.util.LinkedHashMap<String, EstadoPac> pacientes =
+            new java.util.LinkedHashMap<>();
+
+    private EstadoPac pac(String sala) {
+        EstadoPac p = pacientes.get(sala);
+        if (p == null) { p = new EstadoPac(); p.sala = sala; pacientes.put(sala, p); }
+        return p;
     }
 
     private static ServicioVigilancia instancia;
@@ -143,7 +163,7 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         }
 
         nube = new Nube(this);
-        nube.configurar(ajustes.getSala(), ajustes.esBrazalete());
+        nube.configurar(ajustes.salasQueEscucho(), ajustes.esBrazalete(), ajustes.getSala());
         nube.conectar();
 
         hilo.post(latido);
@@ -161,8 +181,13 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
             case ACCION_INICIAR:  iniciarVigilancia(); break;
             case ACCION_PARAR:    pararTodo();         return START_NOT_STICKY;
             case ACCION_CANCELAR: cancelarAlerta(true); break;
-            case ACCION_SOS:      lanzarAlerta("SOS_MANUAL", "", true); break;
-            case ACCION_DEMO:     lanzarAlerta("PREALERTA", "pts=6;g=3.4;dps=312;ang=74", true); break;
+            case ACCION_SOS:
+                lanzarAlerta(ajustes.getSala(), "SOS_MANUAL", "", true, false); break;
+            case ACCION_DEMO:
+                // Lo del menu de pruebas se marca como prueba para no
+                // ensuciar las estadisticas reales.
+                lanzarAlerta(ajustes.getSala(), "PREALERTA",
+                        "pts=6;g=3.4;dps=312;ang=74", true, true); break;
         }
         return START_STICKY;
     }
@@ -248,7 +273,7 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         Detector.Evento ev = detector.muestra(ax, ay, az,
                 ultimoGiro[0], ultimoGiro[1], ultimoGiro[2], t);
         estado.fase = detector.getFase().name();
-        if (ev != null) lanzarAlerta("PREALERTA", ev.resumen(), true);
+        if (ev != null) lanzarAlerta(ajustes.getSala(), "PREALERTA", ev.resumen(), true, false);
     }
 
     @Override public void onAccuracyChanged(Sensor s, int p) { }
@@ -256,34 +281,43 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
     // ------------------------------------------------------------------
     // Alertas
 
-    private void lanzarAlerta(String tipo, String datos, boolean propia) {
+    private void lanzarAlerta(String sala, String tipo, String datos,
+                              boolean propia, boolean prueba) {
         boolean confirmada = tipo.equals("CAIDA_CONFIRMADA") || tipo.equals("SOS_MANUAL");
         estado.alerta = confirmada ? "confirmada" : "prealerta";
         estado.datosAlerta = datos;
         estado.estadoPaciente = confirmada ? "caida" : "prealerta";
+        estado.salaAlerta = sala;
+        estado.quienAlerta = sala.equals(ajustes.getSala()) ? "" : ajustes.nombreDe(sala);
         tCuenta = SystemClock.elapsedRealtime();
 
         sonarAlarma(confirmada);
-        notificarAlerta(confirmada, datos);
+        notificarAlerta(confirmada, datos, estado.quienAlerta);
+        anotarHistorial(sala, tipo, datos, prueba);
         if (propia) {
-            nube.enviarEvento(tipo, datos);
-            anotarHistorial(tipo, datos);
-            pedirUbicacion();
+            nube.enviarEvento(sala, tipo, datos, prueba);
+            if (!prueba) pedirUbicacion();
         }
         avisar();
     }
 
     private void cancelarAlerta(boolean propia) {
-        if (estado.alerta.isEmpty()) return;
+        if (estado.alerta.isEmpty() && !propia) return;
+        String sala = estado.salaAlerta.isEmpty() ? ajustes.getSala() : estado.salaAlerta;
         estado.alerta = "";
         estado.datosAlerta = "";
         estado.estadoPaciente = "ok";
+        estado.quienAlerta = "";
+        estado.salaAlerta = "";
         estado.segundosRestantes = 0;
         detector.reiniciar();
         pararAlarma();
         NotificationManager nm = getSystemService(NotificationManager.class);
         nm.cancel(ID_NOTIF_ALERTA);
-        if (propia) { nube.enviarEvento("CANCELADA", ""); anotarHistorial("CANCELADA", ""); }
+        if (propia) {
+            nube.enviarEvento(sala, "CANCELADA", "", false);
+            anotarHistorial(sala, "CANCELADA", "", false);
+        }
         avisar();
     }
 
@@ -328,7 +362,9 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
                         (detector.u.cuentaMs - (ahora - tCuenta)) / 1000);
                 estado.segundosRestantes = quedan;
                 if (quedan <= 0) {
-                    lanzarAlerta("CAIDA_CONFIRMADA", estado.datosAlerta, true);
+                    String s = estado.salaAlerta.isEmpty() ? ajustes.getSala() : estado.salaAlerta;
+                    lanzarAlerta(s, "CAIDA_CONFIRMADA", estado.datosAlerta,
+                            s.equals(ajustes.getSala()), false);
                 }
             }
 
@@ -382,32 +418,90 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
     @Override public void alConectar(boolean conectado, String servidor) {
         estado.conectado = conectado;
         estado.servidor = servidor;
-        // Al reconectar se vuelve a dejar el historial publicado, por si el
-        // broker perdio el mensaje retenido.
-        if (conectado && !historial.isEmpty()) nube.enviarHistorial(historial);
+        if (conectado) {
+            nube.enviarPerfil(ajustes.getNombre(), ajustes.getModo());
+            // Al reconectar se vuelve a dejar el historial publicado, por si
+            // el broker perdio el mensaje retenido.
+            if (!historial.isEmpty() && ajustes.esBrazalete()) nube.enviarHistorial(soloEventos());
+        }
         avisar();
     }
 
-    @Override public void alVitales(int bpm, int bateria, boolean vigilando,
+    @Override public void alPerfil(String sala, String nombre) {
+        if (nombre != null && !nombre.isEmpty()) pac(sala).nombre = nombre;
+        avisar();
+    }
+
+    @Override public void alHistorial(String sala, String json) {
+        // El cuidador ya guarda todo lo que ve en vivo; esto solo sirve para
+        // recuperar lo que se perdio mientras tenia la app cerrada.
+        try {
+            org.json.JSONObject j = new org.json.JSONObject(json);
+            org.json.JSONArray evs = j.optJSONArray("evs");
+            if (evs == null) return;
+            int nuevos = 0;
+            for (int i = 0; i < evs.length(); i++) {
+                org.json.JSONObject e = evs.getJSONObject(i);
+                if (!yaEstaEnHistorial(sala, e.optString("tipo"), e.optLong("t"))) {
+                    org.json.JSONObject copia = new org.json.JSONObject();
+                    copia.put("k", "ev");
+                    copia.put("t", e.optLong("t"));
+                    copia.put("sala", sala);
+                    copia.put("tipo", e.optString("tipo"));
+                    copia.put("datos", e.optString("datos"));
+                    historial.add(copia.toString());
+                    nuevos++;
+                }
+            }
+            if (nuevos > 0) {
+                ajustes.setHistorial(android.text.TextUtils.join(SEP, historial));
+                recalcularEstadisticas();
+                avisar();
+            }
+        } catch (Exception ignored) { }
+    }
+
+    private boolean yaEstaEnHistorial(String sala, String tipo, long t) {
+        for (String s : historial) {
+            try {
+                org.json.JSONObject j = new org.json.JSONObject(s);
+                if (!"ev".equals(j.optString("k"))) continue;
+                if (!tipo.equals(j.optString("tipo"))) continue;
+                if (!sala.equals(j.optString("sala", sala))) continue;
+                if (Math.abs(j.optLong("t") - t) < 1500) return true;
+            } catch (Exception ignored) { }
+        }
+        return false;
+    }
+
+    @Override public void alVitales(String sala, int bpm, int bateria, boolean vigilando,
                                     boolean pausa, int hz) {
-        estado.ultimoRemoto = System.currentTimeMillis();
+        EstadoPac p = pac(sala);
+        p.ultimo = System.currentTimeMillis();
+        p.bat = bateria; p.hz = hz; p.bpm = bpm; p.vig = vigilando; p.pausa = pausa;
+
+        // Compatibilidad con la pantalla de un solo paciente
+        estado.ultimoRemoto = p.ultimo;
         estado.batPaciente = bateria;
         estado.hzPaciente = hz;
         estado.pausaRemota = pausa;
-        anotarMuestra(bateria, vigilando && !pausa, hz);
+
+        anotarMuestra(sala, bateria, vigilando && !pausa, hz);
         avisar();
     }
 
     /** Anota un evento y lo deja publicado para el cuidador. */
-    private void anotarHistorial(String tipo, String datos) {
+    private void anotarHistorial(String sala, String tipo, String datos, boolean prueba) {
         try {
             org.json.JSONObject j = new org.json.JSONObject();
             j.put("k", "ev");
             j.put("t", System.currentTimeMillis());
+            j.put("sala", sala);
             j.put("tipo", tipo);
             j.put("datos", datos == null ? "" : datos);
+            if (prueba) j.put("prueba", true);
             agregarAlHistorial(j.toString());
-            nube.enviarHistorial(soloEventos());
+            if (ajustes.esBrazalete()) nube.enviarHistorial(soloEventos());
         } catch (Exception ignored) { }
     }
 
@@ -418,15 +512,17 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
      * escuchando, asi que puede quedarse con todo el historial sin que haga
      * falta ningun servidor.
      */
-    private long tUltimaMuestra = 0;
-    private void anotarMuestra(int bateria, boolean vigilando, int hz) {
+    private final java.util.HashMap<String, Long> tUltimaMuestra = new java.util.HashMap<>();
+    private void anotarMuestra(String sala, int bateria, boolean vigilando, int hz) {
         long ahora = System.currentTimeMillis();
-        if (ahora - tUltimaMuestra < 60000) return;   // una por minuto basta
-        tUltimaMuestra = ahora;
+        Long ult = tUltimaMuestra.get(sala);
+        if (ult != null && ahora - ult < 60000) return;   // una por minuto basta
+        tUltimaMuestra.put(sala, ahora);
         try {
             org.json.JSONObject j = new org.json.JSONObject();
             j.put("k", "m");
             j.put("t", ahora);
+            j.put("sala", sala);
             j.put("bat", bateria);
             j.put("vig", vigilando ? 1 : 0);
             j.put("hz", hz);
@@ -455,6 +551,8 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
             try {
                 org.json.JSONObject j = new org.json.JSONObject(s);
                 if (primera == 0) primera = j.optLong("t");
+                // Lo del menu de pruebas no cuenta para las estadisticas.
+                if (j.optBoolean("prueba")) continue;
                 if ("ev".equals(j.optString("k"))) {
                     String t = j.optString("tipo");
                     if (t.equals("PREALERTA")) pre++;
@@ -495,21 +593,24 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         return sb.toString();
     }
 
-    @Override public void alEvento(String tipo, String datos, boolean viejo) {
-        estado.ultimoRemoto = System.currentTimeMillis();
-        if (viejo) return;
-        switch (tipo) {
-            case "PREALERTA":
-                if (!ajustes.esBrazalete()) lanzarAlerta("PREALERTA", datos, false);
-                break;
-            case "CAIDA_CONFIRMADA":
-            case "SOS_MANUAL":
-                if (!ajustes.esBrazalete()) lanzarAlerta(tipo, datos, false);
-                break;
-            case "CANCELADA":
-                cancelarAlerta(false);
-                break;
+    @Override public void alEvento(String sala, String tipo, String datos,
+                                   boolean viejo, boolean prueba) {
+        EstadoPac p = pac(sala);
+        p.ultimo = System.currentTimeMillis();
+        estado.ultimoRemoto = p.ultimo;
+
+        if (tipo.equals("CANCELADA")) {
+            p.estado = "ok";
+            cancelarAlerta(false);
+            avisar();
+            return;
         }
+        if (tipo.equals("PREALERTA")) p.estado = "prealerta";
+        else p.estado = "caida";
+
+        // Un aviso retenido de hace rato se anota, pero no vuelve a sonar.
+        if (!viejo && !ajustes.esBrazalete()) lanzarAlerta(sala, tipo, datos, false, prueba);
+        avisar();
     }
 
     // ------------------------------------------------------------------
@@ -559,9 +660,12 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         nm.notify(ID_NOTIF_VIG, notificacionVigilancia());
     }
 
-    private void notificarAlerta(boolean confirmada, String datos) {
+    private void notificarAlerta(boolean confirmada, String datos, String quien) {
+        String titulo = confirmada
+                ? (quien.isEmpty() ? "CAIDA CONFIRMADA" : "CAIDA DE " + quien.toUpperCase())
+                : (quien.isEmpty() ? "Posible caida detectada" : "Posible caida de " + quien);
         NotificationCompat.Builder b = new NotificationCompat.Builder(this, CANAL_ALERTA)
-                .setContentTitle(confirmada ? "CAIDA CONFIRMADA" : "Posible caida detectada")
+                .setContentTitle(titulo)
                 .setContentText(confirmada
                         ? "No hubo respuesta. Contacta con la persona ahora mismo."
                         : "Toca para cancelar si estas bien.")

@@ -28,6 +28,59 @@ public class Ajustes {
     public String getTelefono()        { return p.getString("tel", "112"); }
     public void   setTelefono(String v){ p.edit().putString("tel", v).apply(); }
 
+    public String getNombre()          { return p.getString("nombre", ""); }
+    public void   setNombre(String v)  { p.edit().putString("nombre", v).apply(); }
+
+    /**
+     * Personas que vigila el cuidador. Se guardan como lineas "sala\tnombre".
+     * Un cuidador puede tener a varias a la vez: la abuela y el abuelo, por
+     * ejemplo, cada uno con su propio telefono.
+     */
+    public java.util.List<String[]> getPacientes() {
+        java.util.List<String[]> lista = new java.util.ArrayList<>();
+        String s = p.getString("pacientes", "");
+        if (s.isEmpty()) return lista;
+        for (String linea : s.split("\n")) {
+            if (linea.isEmpty()) continue;
+            String[] partes = linea.split("\t", 2);
+            lista.add(new String[]{ partes[0], partes.length > 1 ? partes[1] : partes[0] });
+        }
+        return lista;
+    }
+
+    public void setPacientes(java.util.List<String[]> lista) {
+        StringBuilder sb = new StringBuilder();
+        for (String[] x : lista) {
+            if (sb.length() > 0) sb.append('\n');
+            sb.append(x[0]).append('\t').append(x[1]);
+        }
+        p.edit().putString("pacientes", sb.toString()).apply();
+    }
+
+    public void agregarPaciente(String sala, String nombre) {
+        java.util.List<String[]> l = getPacientes();
+        for (String[] x : l) if (x[0].equals(sala)) return;
+        l.add(new String[]{ sala, nombre });
+        setPacientes(l);
+    }
+
+    /** Salas a las que hay que suscribirse segun el papel. */
+    public java.util.List<String> salasQueEscucho() {
+        java.util.List<String> s = new java.util.ArrayList<>();
+        if (esBrazalete()) { s.add(getSala()); return s; }
+        for (String[] x : getPacientes()) s.add(x[0]);
+        return s;
+    }
+
+    public String nombreDe(String sala) {
+        if (sala.equals(getSala())) {
+            String n = getNombre();
+            return n.isEmpty() ? "Yo" : n;
+        }
+        for (String[] x : getPacientes()) if (x[0].equals(sala)) return x[1];
+        return sala;
+    }
+
     /** Historial de eventos guardado, para que sobreviva a reinicios. */
     public String getHistorial()         { return p.getString("historial", ""); }
     public void   setHistorial(String v) { p.edit().putString("historial", v).apply(); }
