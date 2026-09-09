@@ -30,6 +30,30 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
 
     private Ajustes ajustes;
 
+    /**
+     * Selector de foto de perfil.
+     *
+     * Tiene que declararse aqui, como campo, porque Android exige que
+     * estos lanzadores se registren antes de que la pantalla termine de
+     * crearse.
+     */
+    private final androidx.activity.result.ActivityResultLauncher<String> elegirFoto =
+            registerForActivityResult(
+                    new androidx.activity.result.contract.ActivityResultContracts.GetContent(),
+                    uri -> { if (uri != null) guardarFotoDesde(uri); });
+
+    /**
+     * Camara para sacarse una foto en el momento.
+     *
+     * Devuelve una miniatura, no la foto entera. Para un avatar de 128 px
+     * sobra, y evita tener que declarar permisos de camara ni configurar
+     * un proveedor de archivos.
+     */
+    private final androidx.activity.result.ActivityResultLauncher<Void> sacarFoto =
+            registerForActivityResult(
+                    new androidx.activity.result.contract.ActivityResultContracts.TakePicturePreview(),
+                    bmp -> { if (bmp != null) guardarFotoDesdeBitmap(bmp); });
+
     private TextView titulo, subestado, estadoVig, datosSensor, notaSegundoPlano;
     private TextView infoPaciente, infoMisCuidadores;
     private LinearLayout filasPacientes, filasCuidadores, filasMisCuidadores, tarjetaMisCuidadores;
@@ -158,6 +182,10 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
 
         findViewById(R.id.btnExportar).setOnClickListener(v -> guardarHistorial());
 
+        // Tocar la foto de arriba abre el menu de perfil.
+        findViewById(R.id.miFoto).setOnClickListener(v -> menuPerfil());
+        ponerFoto(findViewById(R.id.miFoto), ajustes.getFoto());
+
         findViewById(R.id.btnInvitarCuidador).setOnClickListener(v -> {
             java.util.List<String[]> l = ajustes.getPacientes();
             if (l.isEmpty()) {
@@ -281,6 +309,8 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
         ServicioVigilancia.EstadoPac p = (s == null) ? null : s.pacientes.get(sala);
 
         ((TextView) v.findViewById(R.id.nombre)).setText(nombre);
+        // La cara de la persona, si la mando junto con su perfil.
+        ponerFoto(v.findViewById(R.id.foto), p == null ? "" : p.foto);
 
         long seg = (p == null || p.ultimo == 0) ? -1 : (System.currentTimeMillis() - p.ultimo) / 1000;
         int color; String estadoTxt;
@@ -400,6 +430,178 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
         return "hace " + (h / 24) + " dias";
     }
 
+    /* ==============================================================
+       Foto de perfil
+       ==============================================================
+
+       Se reduce a 128 px y se guarda en base64. Asi pesa unos pocos
+       kilobytes y viaja junto al nombre hasta el telefono del cuidador,
+       que ve una cara en vez de un codigo. Una foto de camara entera no
+       cabria en el mensaje.                                           */
+
+    private static final int LADO_FOTO = 128;
+
+    /** Menu que sale al tocar tu foto: cambiarla, sacarte una, o el nombre. */
+    private void menuPerfil() {
+        String nombre = ajustes.getNombre();
+        String titulo = nombre.isEmpty() ? "Tu perfil" : nombre;
+        String[] opciones = {
+                "Elegir una foto de la galeria",
+                "Sacarme una foto ahora",
+                "Cambiar mi nombre",
+                ajustes.getFoto().isEmpty() ? null : "Quitar la foto"
+        };
+        java.util.List<String> lista = new java.util.ArrayList<>();
+        for (String o : opciones) if (o != null) lista.add(o);
+        String[] finales = lista.toArray(new String[0]);
+
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle(titulo)
+                .setItems(finales, (d, i) -> {
+                    switch (finales[i]) {
+                        case "Elegir una foto de la galeria": elegirFoto.launch("image/*"); break;
+                        case "Sacarme una foto ahora":
+                            try { sacarFoto.launch(null); }
+                            catch (Exception e) {
+                                Toast.makeText(this, "No pude abrir la camara",
+                                        Toast.LENGTH_SHORT).show();
+                            }
+                            break;
+                        case "Cambiar mi nombre": pedirNombre(); break;
+                        case "Quitar la foto":
+                            ajustes.setFoto("");
+                            android.widget.ImageView iv = findViewById(R.id.miFoto);
+                            iv.setTag(null);
+                            ponerFoto(iv, "");
+                            reconectar();
+                            break;
+                    }
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    /** Cambiar el nombre con el que te ven los demas. */
+    private void pedirNombre() {
+        final EditText campo = new EditText(this);
+        campo.setText(ajustes.getNombre());
+        campo.setHint("Como te ven los demas");
+        campo.setSingleLine(true);
+        int p = (int) (18 * getResources().getDisplayMetrics().density);
+        campo.setPadding(p, p, p, p);
+
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Tu nombre")
+                .setMessage("Es lo que aparece en el telefono de la otra persona, "
+                          + "en vez del codigo de sala.")
+                .setView(campo)
+                .setPositiveButton("Guardar", (d, w) -> {
+                    ajustes.setNombre(campo.getText().toString().trim());
+                    campoNombre.setText(ajustes.getNombre());
+                    pintarModo();
+                    reconectar();
+                    Toast.makeText(this, "Nombre guardado", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    /** Guarda una foto ya en memoria (la que devuelve la camara). */
+    private void guardarFotoDesdeBitmap(android.graphics.Bitmap bmp) {
+        try {
+            int lado = Math.min(bmp.getWidth(), bmp.getHeight());
+            android.graphics.Bitmap cuadrada = android.graphics.Bitmap.createBitmap(bmp,
+                    (bmp.getWidth() - lado) / 2, (bmp.getHeight() - lado) / 2, lado, lado);
+            android.graphics.Bitmap chica = android.graphics.Bitmap.createScaledBitmap(
+                    cuadrada, LADO_FOTO, LADO_FOTO, true);
+            java.io.ByteArrayOutputStream salida = new java.io.ByteArrayOutputStream();
+            chica.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, salida);
+            String b64 = android.util.Base64.encodeToString(salida.toByteArray(),
+                    android.util.Base64.NO_WRAP);
+            ajustes.setFoto(b64);
+            android.widget.ImageView iv = findViewById(R.id.miFoto);
+            iv.setTag(null);
+            ponerFoto(iv, b64);
+            reconectar();
+            Toast.makeText(this, "Foto guardada", Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "No pude usar esa foto", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void guardarFotoDesde(Uri uri) {
+        try {
+            java.io.InputStream in = getContentResolver().openInputStream(uri);
+            android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
+            o.inJustDecodeBounds = true;
+            android.graphics.BitmapFactory.decodeStream(in, null, o);
+            if (in != null) in.close();
+
+            // Bajar de golpe el tamaño al leer, para no cargar en memoria
+            // una foto de 12 megapixeles solo para hacerla diminuta.
+            int escala = 1;
+            while (o.outWidth / (escala * 2) >= LADO_FOTO
+                    && o.outHeight / (escala * 2) >= LADO_FOTO) escala *= 2;
+
+            android.graphics.BitmapFactory.Options o2 = new android.graphics.BitmapFactory.Options();
+            o2.inSampleSize = escala;
+            in = getContentResolver().openInputStream(uri);
+            android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeStream(in, null, o2);
+            if (in != null) in.close();
+            if (bmp == null) { Toast.makeText(this, "No pude leer esa imagen", Toast.LENGTH_SHORT).show(); return; }
+
+            // Recorte cuadrado centrado y escalado final
+            int lado = Math.min(bmp.getWidth(), bmp.getHeight());
+            android.graphics.Bitmap cuadrada = android.graphics.Bitmap.createBitmap(bmp,
+                    (bmp.getWidth() - lado) / 2, (bmp.getHeight() - lado) / 2, lado, lado);
+            android.graphics.Bitmap chica = android.graphics.Bitmap.createScaledBitmap(
+                    cuadrada, LADO_FOTO, LADO_FOTO, true);
+
+            java.io.ByteArrayOutputStream salida = new java.io.ByteArrayOutputStream();
+            chica.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, salida);
+            String b64 = android.util.Base64.encodeToString(salida.toByteArray(),
+                    android.util.Base64.NO_WRAP);
+
+            ajustes.setFoto(b64);
+            ponerFoto(findViewById(R.id.miFoto), b64);
+            // Reconectar para que el perfil nuevo salga publicado.
+            reconectar();
+            Toast.makeText(this, "Foto guardada (" + (b64.length() / 1024) + " kB)",
+                    Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "No pude usar esa imagen: " + e.getMessage(),
+                    Toast.LENGTH_LONG).show();
+        }
+    }
+
+    /** Pone una foto en base64 dentro de un ImageView, recortada en circulo. */
+    private void ponerFoto(android.widget.ImageView iv, String b64) {
+        if (iv == null) return;
+        // Solo se redibuja si cambio, para no decodificar cada segundo.
+        Object anterior = iv.getTag();
+        if (b64 != null && b64.equals(anterior)) return;
+        iv.setTag(b64);
+
+        if (b64 == null || b64.isEmpty()) {
+            iv.setImageResource(R.mipmap.ic_launcher);
+            int p = (int) (7 * getResources().getDisplayMetrics().density);
+            iv.setPadding(p, p, p, p);
+            return;
+        }
+        try {
+            byte[] d = android.util.Base64.decode(b64, android.util.Base64.DEFAULT);
+            android.graphics.Bitmap bmp =
+                    android.graphics.BitmapFactory.decodeByteArray(d, 0, d.length);
+            if (bmp == null) return;
+            androidx.core.graphics.drawable.RoundedBitmapDrawable redonda =
+                    androidx.core.graphics.drawable.RoundedBitmapDrawableFactory
+                            .create(getResources(), bmp);
+            redonda.setCircular(true);
+            iv.setImageDrawable(redonda);
+            iv.setPadding(0, 0, 0, 0);
+        } catch (Exception ignored) { }
+    }
+
     private void reconectar() {
         mandarAlServicio(ServicioVigilancia.ACCION_PARAR);
         btnVigilar.postDelayed(() ->
@@ -443,6 +645,10 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
             // Las tarjetas se refrescan siempre; las listas de personas
             // cada 3 s, que cambian poco y recrearlas hace parpadeo.
             pintarTarjetasPacientes();
+            // Rehacer la foto de la cabecera. No cuesta nada porque
+            // ponerFoto no hace nada si no cambio, y asi no se queda
+            // cuadrada si algo le reasigno la imagen por el camino.
+            ponerFoto(findViewById(R.id.miFoto), ajustes.getFoto());
             if (System.currentTimeMillis() - tUltimasListas > 3000) {
                 tUltimasListas = System.currentTimeMillis();
                 if (ajustes.esBrazalete()) {
@@ -461,8 +667,22 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
                 }
             }
 
-            subestado.setText((e.vigilando ? "Vigilando" : "Detenido")
-                    + "  ·  " + (e.conectado ? "Sala " + ajustes.getSala() : "Conectando..."));
+            // La cabecera habla de VOS, no del paciente. Antes mostraba la
+            // sala propia, que a un cuidador no le dice nada y encima se
+            // confundia con la tarjeta de la persona vigilada.
+            String yo = ajustes.getNombre().isEmpty()
+                    ? (ajustes.esBrazalete() ? "Sin nombre" : "Sin nombre")
+                    : ajustes.getNombre();
+            String detalle;
+            if (ajustes.esBrazalete()) {
+                detalle = e.conectado ? (e.vigilando ? "vigilando" : "detenido") : "conectando...";
+                detalle = "sos el paciente · " + detalle;
+            } else {
+                int n = ajustes.getPacientes().size();
+                detalle = "sos el cuidador · " + (n == 0 ? "sin nadie a cargo"
+                        : n == 1 ? "1 persona a cargo" : n + " personas a cargo");
+            }
+            subestado.setText(yo + "  ·  " + detalle);
 
             boolean brz = ajustes.esBrazalete();
             estadoVig.setText(e.vigilando ? (brz ? "Activa" : "Escuchando") : "Detenida");

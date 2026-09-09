@@ -35,6 +35,15 @@
             android:layout_weight="1"
             android:orientation="vertical">
 
+            <!-- Deja claro de quien es la tarjeta: es una persona vigilada,
+                 no vos. La confusion con el perfil propio era facil. -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="PERSONA VIGILADA"
+                android:textColor="@color/apagado"
+                android:textSize="10.5sp" />
+
             <TextView
                 android:id="@+id/nombre"
                 android:layout_width="wrap_content"

@@ -32,7 +32,7 @@ public class Nube implements MqttCallback {
         void alEvento(String sala, String tipo, String datos, boolean viejo, boolean prueba);
         void alVitales(String sala, int bpm, int bateria, boolean vigilando, boolean pausa,
                        int hz, String actividad, int pasos);
-        void alPerfil(String sala, String nombre);
+        void alPerfil(String sala, String nombre, String fotoBase64);
         /** Un cuidador aviso de que entro a revisar a esta persona. */
         void alPresencia(String sala, String id, String nombre, long cuando);
         /** Ultimos valores de aceleracion del paciente, para las graficas. */
@@ -133,14 +133,15 @@ public class Nube implements MqttCallback {
         }
     }
 
-    /** Quien soy, para que el otro lado muestre un nombre y no un codigo. */
-    public void enviarPerfil(String nombre, String rol) {
+    /** Quien soy, para que el otro lado muestre un nombre y una cara. */
+    public void enviarPerfil(String nombre, String rol, String fotoBase64) {
         try {
             JSONObject j = new JSONObject();
             j.put("nombre", nombre == null || nombre.isEmpty() ? "Paciente" : nombre);
             j.put("rol", rol);
             j.put("id", miId);
             j.put("desde", System.currentTimeMillis());
+            if (fotoBase64 != null && !fotoBase64.isEmpty()) j.put("foto", fotoBase64);
             publicar(salaPropia, "perfil", j.toString(), true);
         } catch (Exception ignored) { }
     }
@@ -201,12 +202,13 @@ public class Nube implements MqttCallback {
      * Con varios cuidadores, si todos suponen que otro esta mirando no
      * mira nadie. Publicando esto, todos ven cuando reviso cada uno.
      */
-    public void enviarPresencia(String sala, String nombre) {
+    public void enviarPresencia(String sala, String nombre, String fotoBase64) {
         try {
             JSONObject j = new JSONObject();
             j.put("id", miId);
             j.put("nombre", nombre == null || nombre.isEmpty() ? "Cuidador" : nombre);
             j.put("ts", System.currentTimeMillis());
+            if (fotoBase64 != null && !fotoBase64.isEmpty()) j.put("foto", fotoBase64);
             publicar(sala, "presencia/" + miId, j.toString(), true);
         } catch (Exception ignored) { }
     }
@@ -291,7 +293,7 @@ public class Nube implements MqttCallback {
                         j.optLong("ts"));
             } else if (sub.equals("perfil")) {
                 JSONObject j = new JSONObject(txt);
-                escucha.alPerfil(sala, j.optString("nombre"));
+                escucha.alPerfil(sala, j.optString("nombre"), j.optString("foto", ""));
             } else if (sub.equals("historial")) {
                 escucha.alHistorial(sala, txt);
             } else if (sub.equals("evento")) {

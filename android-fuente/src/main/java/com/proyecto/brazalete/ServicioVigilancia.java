@@ -116,6 +116,8 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         public final java.util.LinkedHashMap<String, Persona> cuidadores = new java.util.LinkedHashMap<>();
         public String ubicacion = "";
         public double lat, lon;
+        /** Su foto de perfil, en base64, tal como la mando. */
+        public String foto = "";
     }
 
     /** Un cuidador, con la ultima vez que entro a revisar. */
@@ -462,7 +464,7 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
                 // El cuidador avisa de que sigue mirando.
                 if (!ajustes.esBrazalete()) {
                     for (String s : ajustes.salasQueEscucho()) {
-                        nube.enviarPresencia(s, ajustes.getNombre());
+                        nube.enviarPresencia(s, ajustes.getNombre(), ajustes.getFoto());
                     }
                 }
             }
@@ -514,7 +516,16 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         estado.conectado = conectado;
         estado.servidor = servidor;
         if (conectado) {
-            nube.enviarPerfil(ajustes.getNombre(), ajustes.getModo());
+            // El perfil describe a la persona vigilada. El cuidador no
+            // publica uno: su cara y su nombre viajan en la presencia, que
+            // es donde el paciente ve quien lo esta cuidando.
+            if (ajustes.esBrazalete()) {
+                nube.enviarPerfil(ajustes.getNombre(), ajustes.getModo(), ajustes.getFoto());
+            } else {
+                for (String s : ajustes.salasQueEscucho()) {
+                    nube.enviarPresencia(s, ajustes.getNombre(), ajustes.getFoto());
+                }
+            }
             // Al reconectar se vuelve a dejar el historial publicado, por si
             // el broker perdio el mensaje retenido.
             if (!historial.isEmpty() && ajustes.esBrazalete()) nube.enviarHistorial(soloEventos());
@@ -537,8 +548,9 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         avisar();
     }
 
-    @Override public void alPerfil(String sala, String nombre) {
+    @Override public void alPerfil(String sala, String nombre, String fotoBase64) {
         if (nombre != null && !nombre.isEmpty()) pac(sala).nombre = nombre;
+        if (fotoBase64 != null && !fotoBase64.isEmpty()) pac(sala).foto = fotoBase64;
         avisar();
     }
 

@@ -45,6 +45,16 @@ public class Ajustes {
         return id;
     }
 
+    /**
+     * Foto de perfil, en base64.
+     *
+     * Se guarda ya reducida a 128 px: pesa unos pocos kilobytes, asi que
+     * cabe sin problema en el mensaje de perfil que viaja a los
+     * cuidadores. Una foto de camara entera no cabria.
+     */
+    public String getFoto()            { return p.getString("foto", ""); }
+    public void   setFoto(String v)    { p.edit().putString("foto", v).apply(); }
+
     public String getNombre()          { return p.getString("nombre", ""); }
     public void   setNombre(String v)  { p.edit().putString("nombre", v).apply(); }
 
