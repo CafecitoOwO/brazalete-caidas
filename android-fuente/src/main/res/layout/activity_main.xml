@@ -393,6 +393,38 @@
             android:textColor="#DDFFFFFF"
             android:textSize="13sp" />
 
+        <TextView
+            android:id="@+id/micAviso"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:gravity="center"
+            android:text=""
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/btnEscuchar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:backgroundTint="#33FFFFFF"
+            android:text="Escuchar que pasa"
+            android:textColor="#FFFFFF"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/btnHablar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:backgroundTint="#33FFFFFF"
+            android:text="Hablarle"
+            android:textColor="#FFFFFF"
+            android:visibility="gone" />
+
         <Button
             android:id="@+id/btnEstoyBien"
             android:layout_width="match_parent"

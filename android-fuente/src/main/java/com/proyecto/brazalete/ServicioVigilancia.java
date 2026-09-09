@@ -48,6 +48,8 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
     public static final String ACCION_CANCELAR = "cancelar";
     public static final String ACCION_SOS      = "sos";
     public static final String ACCION_DEMO     = "demo";
+    public static final String ACCION_ESCUCHAR = "escuchar";
+    public static final String ACCION_HABLAR   = "hablar";
 
     private static final String CANAL_VIG    = "vigilancia";
     private static final String CANAL_ALERTA = "alertas";
@@ -89,6 +91,9 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         public String  actividad = "";
         public String  detalleContexto = "";
         public int     pasos = -1;
+        // Voz durante la alerta
+        public boolean escuchando = false;    // yo (cuidador) estoy oyendo
+        public boolean micAbierto = false;    // mi microfono esta encendido
         public long    desde = 0;
         public int     registros = 0;
     }
@@ -132,6 +137,7 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
     private Ajustes ajustes;
     private Nube nube;
     private Contexto contexto;
+    private AudioAlerta voz;
     private final Detector detector = new Detector();
 
     private final Handler hilo = new Handler(Looper.getMainLooper());
@@ -162,6 +168,10 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         giroscopio   = sensores.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
         vibrador     = (Vibrator) getSystemService(VIBRATOR_SERVICE);
         contexto     = new Contexto(this);
+        voz = new AudioAlerta(this, (canal, mime, b64) -> {
+            String s = estado.salaAlerta.isEmpty() ? ajustes.getSala() : estado.salaAlerta;
+            nube.enviarAudio(s, canal, mime, b64);
+        });
 
         crearCanales();
 
@@ -184,7 +194,7 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
 
         // En Android hay que entrar en primer plano enseguida o el sistema
         // mata el servicio.
-        startForeground(ID_NOTIF_VIG, notificacionVigilancia());
+        entrarEnPrimerPlano(false);
 
         switch (accion) {
             case ACCION_INICIAR:  iniciarVigilancia(); break;
@@ -197,6 +207,8 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
                 // ensuciar las estadisticas reales.
                 lanzarAlerta(ajustes.getSala(), "PREALERTA",
                         "pts=6;g=3.4;dps=312;ang=74", true, true); break;
+            case ACCION_ESCUCHAR: alternarEscucha(); break;
+            case ACCION_HABLAR:   alternarHabla();   break;
         }
         return START_STICKY;
     }
@@ -323,6 +335,10 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         estado.segundosRestantes = 0;
         detector.reiniciar();
         pararAlarma();
+        // El microfono se apaga con la alerta, sin excepciones.
+        if (voz != null) voz.pararTodo();
+        estado.escuchando = false;
+        estado.micAbierto = false;
         NotificationManager nm = getSystemService(NotificationManager.class);
         nm.cancel(ID_NOTIF_ALERTA);
         if (propia) {
@@ -500,6 +516,103 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
             } catch (Exception ignored) { }
         }
         return false;
+    }
+
+    // ------------------------------------------------------------------
+    // Voz durante la alerta
+
+    /**
+     * Entra en primer plano declarando solo los tipos que hacen falta.
+     *
+     * Android 14 comprueba los permisos de TODOS los tipos declarados en
+     * el momento de llamar aqui. Si se pidiera "microphone" desde el
+     * arranque, el servicio se caeria antes de que el usuario llegue a
+     * conceder el permiso de grabacion. Por eso el microfono se declara
+     * solo cuando de verdad se va a usar, durante una alerta.
+     */
+    private void entrarEnPrimerPlano(boolean conMicrofono) {
+        Notification n = notificacionVigilancia();
+        try {
+            if (Build.VERSION.SDK_INT >= 29) {
+                int tipos = android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH;
+                if (conMicrofono && puedeGrabar()) {
+                    tipos |= android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
+                }
+                startForeground(ID_NOTIF_VIG, n, tipos);
+            } else {
+                startForeground(ID_NOTIF_VIG, n);
+            }
+        } catch (Exception e) {
+            // Si el sistema rechaza el tipo ampliado, al menos seguir vivo.
+            try { startForeground(ID_NOTIF_VIG, n); } catch (Exception ignored) { }
+        }
+    }
+
+    private boolean puedeGrabar() {
+        return ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private boolean hayAlerta() { return !estado.alerta.isEmpty(); }
+
+    private String salaDeLaAlerta() {
+        return estado.salaAlerta.isEmpty() ? ajustes.getSala() : estado.salaAlerta;
+    }
+
+    /** El cuidador pide oir al paciente. */
+    private void alternarEscucha() {
+        if (!hayAlerta() || ajustes.esBrazalete()) return;
+        estado.escuchando = !estado.escuchando;
+        nube.pedirEscuchar(salaDeLaAlerta(), estado.escuchando, ajustes.getNombre());
+        if (!estado.escuchando) voz.pararTodo();
+        avisar();
+    }
+
+    /** Cualquiera de los dos lados abre su microfono para hablar. */
+    private void alternarHabla() {
+        if (!hayAlerta()) return;
+        if (estado.micAbierto) {
+            voz.parar();
+            estado.micAbierto = false;
+            entrarEnPrimerPlano(false);
+        } else {
+            if (!puedeGrabar()) {
+                android.util.Log.w("CuidAPP", "falta el permiso de microfono");
+                return;
+            }
+            entrarEnPrimerPlano(true);
+            voz.empezar(ajustes.esBrazalete() ? "p" : "c");
+            estado.micAbierto = true;
+        }
+        avisar();
+    }
+
+    @Override public void alAudio(String sala, String canal, String mime, String base64,
+                                  boolean activo, String de) {
+        // Regla dura: sin alerta en curso, el microfono no se enciende jamas.
+        if (canal.equals("pedido")) {
+            if (!ajustes.esBrazalete() || !sala.equals(ajustes.getSala())) return;
+            if (activo && hayAlerta() && puedeGrabar()) {
+                entrarEnPrimerPlano(true);     // declarar el microfono antes de abrirlo
+                voz.empezar("p");
+                estado.micAbierto = true;
+            } else {
+                voz.parar();
+                estado.micAbierto = false;
+                entrarEnPrimerPlano(false);
+            }
+            avisar();
+            return;
+        }
+        if (base64 == null || base64.isEmpty()) return;
+
+        if (canal.equals("p") && !ajustes.esBrazalete() && estado.escuchando) {
+            voz.reproducir(base64);                 // el cuidador oye al paciente
+        } else if (canal.equals("c") && ajustes.esBrazalete() && hayAlerta()) {
+            estado.escuchando = true;               // solo para mostrar el aviso
+            voz.reproducir(base64);                 // el paciente oye al cuidador
+            avisar();
+        }
     }
 
     @Override public void alVitales(String sala, int bpm, int bateria, boolean vigilando,

@@ -109,6 +109,15 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
             mandarAlServicio(ServicioVigilancia.ACCION_SOS);
         });
 
+        findViewById(R.id.btnEscuchar).setOnClickListener(v -> {
+            pedirPermisos();
+            mandarAlServicio(ServicioVigilancia.ACCION_ESCUCHAR);
+        });
+        findViewById(R.id.btnHablar).setOnClickListener(v -> {
+            pedirPermisos();
+            mandarAlServicio(ServicioVigilancia.ACCION_HABLAR);
+        });
+
         findViewById(R.id.btnEstoyBien).setOnClickListener(v ->
                 mandarAlServicio(ServicioVigilancia.ACCION_CANCELAR));
 
@@ -251,6 +260,27 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
                 alertaCuenta.setVisibility(conf ? View.GONE : View.VISIBLE);
                 alertaCuenta.setText(String.valueOf(e.segundosRestantes));
                 alertaDatos.setText(e.datosAlerta.replace(";", "   "));
+
+                // Voz: el cuidador puede oir y hablar; el paciente solo
+                // responder, y siempre viendo que su microfono esta abierto.
+                boolean brz2 = ajustes.esBrazalete();
+                findViewById(R.id.btnEscuchar).setVisibility(brz2 ? View.GONE : View.VISIBLE);
+                findViewById(R.id.btnHablar).setVisibility(View.VISIBLE);
+                ((Button) findViewById(R.id.btnEscuchar)).setText(
+                        e.escuchando ? "Dejar de escuchar" : "Escuchar que pasa");
+                ((Button) findViewById(R.id.btnHablar)).setText(
+                        e.micAbierto ? "Dejar de hablar" : (brz2 ? "Responder" : "Hablarle"));
+
+                TextView mic = findViewById(R.id.micAviso);
+                if (brz2 && e.micAbierto) {
+                    mic.setVisibility(View.VISIBLE);
+                    mic.setText("Tu cuidador te esta escuchando.\nHabla si necesitas algo.");
+                } else if (brz2 && e.escuchando) {
+                    mic.setVisibility(View.VISIBLE);
+                    mic.setText("Tu cuidador te esta hablando.");
+                } else {
+                    mic.setVisibility(View.GONE);
+                }
             }
         });
     }
@@ -370,6 +400,11 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
                 != PackageManager.PERMISSION_GRANTED) {
             faltan.add(Manifest.permission.ACCESS_FINE_LOCATION);
+        }
+        // Para poder oir a la persona cuando salte una alarma.
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            faltan.add(Manifest.permission.RECORD_AUDIO);
         }
         if (!faltan.isEmpty()) {
             ActivityCompat.requestPermissions(this, faltan.toArray(new String[0]), 10);

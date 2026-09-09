@@ -34,6 +34,9 @@ public class Nube implements MqttCallback {
                        int hz, String actividad, int pasos);
         void alPerfil(String sala, String nombre);
         void alHistorial(String sala, String json);
+        /** canal: "pedido" | "p" (voz del paciente) | "c" (voz del cuidador) */
+        void alAudio(String sala, String canal, String mime, String base64,
+                     boolean activo, String de);
     }
 
     private static final String TAG = "Nube";
@@ -166,6 +169,28 @@ public class Nube implements MqttCallback {
         } catch (Exception ignored) { }
     }
 
+    /** Un trozo de voz. Nunca retenido: la voz vieja no le sirve a nadie. */
+    public void enviarAudio(String sala, String canal, String mime, String base64) {
+        try {
+            JSONObject j = new JSONObject();
+            j.put("t", mime);
+            j.put("d", base64);
+            j.put("de", miId);
+            publicar(sala, "audio/" + canal, j.toString(), false);
+        } catch (Exception ignored) { }
+    }
+
+    /** El cuidador pide (o deja de pedir) escuchar. */
+    public void pedirEscuchar(String sala, boolean activo, String nombre) {
+        try {
+            JSONObject j = new JSONObject();
+            j.put("activo", activo);
+            j.put("de", miId);
+            j.put("nombre", nombre == null ? "" : nombre);
+            publicar(sala, "audio/pedido", j.toString(), false);
+        } catch (Exception ignored) { }
+    }
+
     public void enviarUbicacion(double lat, double lon, int precision) {
         try {
             JSONObject j = new JSONObject();
@@ -217,6 +242,12 @@ public class Nube implements MqttCallback {
                 escucha.alVitales(sala, j.optInt("bpm"), j.optInt("bat"),
                         j.optBoolean("vig"), j.optBoolean("pausa"), j.optInt("hz"),
                         j.optString("act", ""), j.optInt("pasos", -1));
+            } else if (sub.equals("audio")) {
+                String canal = partes.length > 3 ? partes[3] : "";
+                JSONObject j = new JSONObject(txt);
+                if (miId.equals(j.optString("de"))) return;   // eco propio
+                escucha.alAudio(sala, canal, j.optString("t"), j.optString("d"),
+                        j.optBoolean("activo"), j.optString("de"));
             } else if (sub.equals("perfil")) {
                 JSONObject j = new JSONObject(txt);
                 escucha.alPerfil(sala, j.optString("nombre"));

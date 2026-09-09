@@ -17,6 +17,12 @@
          por encima de 200 Hz. -->
     <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" />
 
+    <!-- Voz durante una alerta. En Android 14 usar el microfono desde un
+         servicio en primer plano exige declararlo como tipo "microphone",
+         ademas del permiso normal de grabacion. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Permite que la alerta se abra ENCIMA de la pantalla de bloqueo, sin
          que nadie tenga que desbloquear el telefono. Es la ventaja principal
@@ -56,7 +62,7 @@
         <service
             android:name=".ServicioVigilancia"
             android:exported="false"
-            android:foregroundServiceType="health" />
+            android:foregroundServiceType="health|microphone" />
 
     </application>
 </manifest>
