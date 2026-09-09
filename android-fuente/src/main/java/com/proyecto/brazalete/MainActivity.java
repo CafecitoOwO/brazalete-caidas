@@ -89,6 +89,16 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
         modoBrazalete.setChecked(ajustes.esBrazalete());
         modoCuidador.setChecked(!ajustes.esBrazalete());
 
+        // Tocar el selector cambia el modo en el acto. Antes habia que
+        // acordarse de pulsar "Guardar y reconectar", asi que la pantalla
+        // se quedaba igual y parecia que la app no hacia nada.
+        modoBrazalete.setOnCheckedChangeListener((v, marcado) -> {
+            if (marcado) cambiarModo("brazalete");
+        });
+        modoCuidador.setOnCheckedChangeListener((v, marcado) -> {
+            if (marcado) cambiarModo("cuidador");
+        });
+
         btnVigilar.setOnClickListener(v -> {
             ServicioVigilancia s = ServicioVigilancia.get();
             if (s != null && s.getEstado().vigilando) {
@@ -178,6 +188,19 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
         Intent i = new Intent(this, ServicioVigilancia.class);
         i.setAction(accion);
         ContextCompat.startForegroundService(this, i);
+    }
+
+    private void cambiarModo(String modo) {
+        if (ajustes.getModo().equals(modo)) return;
+        ajustes.setModo(modo);
+        pintarModo();
+        // Reconectar para suscribirse a las salas que correspondan al papel.
+        mandarAlServicio(ServicioVigilancia.ACCION_PARAR);
+        btnVigilar.postDelayed(() ->
+                mandarAlServicio(ServicioVigilancia.ACCION_INICIAR), 600);
+        Toast.makeText(this,
+                modo.equals("brazalete") ? "Ahora sos el paciente" : "Ahora sos el cuidador",
+                Toast.LENGTH_SHORT).show();
     }
 
     private void pintarModo() {
