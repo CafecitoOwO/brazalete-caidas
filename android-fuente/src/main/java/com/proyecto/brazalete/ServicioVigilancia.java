@@ -85,6 +85,10 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         public int     totalConfirmadas = 0;
         public int     totalCanceladas = 0;
         public int     porcentajeVigilancia = -1;
+        // Contexto: que esta haciendo la persona
+        public String  actividad = "";
+        public String  detalleContexto = "";
+        public int     pasos = -1;
         public long    desde = 0;
         public int     registros = 0;
     }
@@ -96,6 +100,9 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         public boolean vig = false, pausa = false;
         public long ultimo = 0;
         public String estado = "ok";      // ok | prealerta | caida
+        // Que esta haciendo: "Caminando", "Quieto, de pie", etc.
+        public String actividad = "";
+        public int pasos = -1;
     }
 
     public final java.util.LinkedHashMap<String, EstadoPac> pacientes =
@@ -124,6 +131,7 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
 
     private Ajustes ajustes;
     private Nube nube;
+    private Contexto contexto;
     private final Detector detector = new Detector();
 
     private final Handler hilo = new Handler(Looper.getMainLooper());
@@ -153,6 +161,7 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         acelerometro = sensores.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
         giroscopio   = sensores.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
         vibrador     = (Vibrator) getSystemService(VIBRATOR_SERVICE);
+        contexto     = new Contexto(this);
 
         crearCanales();
 
@@ -215,6 +224,7 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         // 10000 us = 100 Hz. Muy por encima de los ~56 Hz del navegador.
         sensores.registerListener(this, acelerometro, 10000);
         if (giroscopio != null) sensores.registerListener(this, giroscopio, 10000);
+        contexto.empezar();
 
         PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "brazalete:vigilancia");
@@ -227,6 +237,7 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
 
     private void pararTodo() {
         sensores.unregisterListener(this);
+        if (contexto != null) contexto.parar();
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         wakeLock = null;
         pararAlarma();
@@ -357,7 +368,23 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         @Override public void run() {
             long ahora = SystemClock.elapsedRealtime();
 
+            // Que esta haciendo la persona ahora mismo.
+            if (estado.vigilando && ajustes.esBrazalete()) {
+                estado.actividad = contexto.descripcion();
+                estado.detalleContexto = contexto.detalle();
+                estado.pasos = contexto.getPasos();
+            }
+
             if (estado.alerta.equals("prealerta")) {
+                // Si volvio a caminar, no se cayo. Es la prueba mas fuerte
+                // que existe, y ningun umbral de aceleracion puede darla:
+                // nadie camina tirado en el suelo.
+                boolean propia = estado.salaAlerta.isEmpty()
+                              || estado.salaAlerta.equals(ajustes.getSala());
+                if (propia && ajustes.esBrazalete() && contexto.caminoHace(2500)) {
+                    cancelarAlerta(true);
+                    return;
+                }
                 int quedan = (int) Math.max(0,
                         (detector.u.cuentaMs - (ahora - tCuenta)) / 1000);
                 estado.segundosRestantes = quedan;
@@ -369,7 +396,8 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
             }
 
             if (ahora % 3000 < 1100) {
-                nube.enviarVitales(0, nivelBateria(), estado.vigilando, estado.hz);
+                nube.enviarVitales(0, nivelBateria(), estado.vigilando, estado.hz,
+                        estado.actividad, estado.pasos);
             }
 
             actualizarNotificacionVigilancia();
@@ -475,10 +503,11 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
     }
 
     @Override public void alVitales(String sala, int bpm, int bateria, boolean vigilando,
-                                    boolean pausa, int hz) {
+                                    boolean pausa, int hz, String actividad, int pasos) {
         EstadoPac p = pac(sala);
         p.ultimo = System.currentTimeMillis();
         p.bat = bateria; p.hz = hz; p.bpm = bpm; p.vig = vigilando; p.pausa = pausa;
+        p.actividad = actividad; p.pasos = pasos;
 
         // Compatibilidad con la pantalla de un solo paciente
         estado.ultimoRemoto = p.ultimo;
@@ -641,8 +670,12 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
     }
 
     private Notification notificacionVigilancia() {
+        // La notificacion permanente dice que esta haciendo la persona, que
+        // es mas util que repetir "vigilando" todo el dia.
         String texto = ajustes.esBrazalete()
-                ? (estado.vigilando ? "Vigilando caidas" : "En pausa")
+                ? (estado.vigilando
+                    ? (estado.actividad.isEmpty() ? "Vigilando caidas" : estado.actividad)
+                    : "En pausa")
                 : "Panel del cuidador";
         String sub = estado.conectado ? "Sala " + ajustes.getSala() : "Sin conexion";
         return new NotificationCompat.Builder(this, CANAL_VIG)

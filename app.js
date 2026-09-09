@@ -41,8 +41,92 @@ function leer(clave, pordefecto) {
     return v === null ? pordefecto : JSON.parse(v);
   } catch (e) { return pordefecto; }
 }
+/**
+ * Guarda en localStorage avisando si falla.
+ *
+ * Antes esto se tragaba el error en silencio, y cuando el almacenamiento
+ * se llenaba la app dejaba de guardar sin decir nada: seguia detectando
+ * pero no conservaba nada. Un fallo mudo es lo peor que puede pasarle a
+ * una app que existe para guardar datos.
+ */
+let avisadoLleno = false;
 function escribir(clave, valor) {
-  try { localStorage.setItem(clave, JSON.stringify(valor)); } catch (e) {}
+  try {
+    localStorage.setItem(clave, JSON.stringify(valor));
+    return true;
+  } catch (e) {
+    if (!avisadoLleno) {
+      avisadoLleno = true;
+      mostrarAviso('<b>El almacenamiento del telefono esta lleno</b> y la app dejo de ' +
+        'guardar.<br><br>Descarga el dataset y el historial, y despues borralos desde ' +
+        'sus pantallas para liberar espacio.');
+      log('No se pudo guardar', 'Almacenamiento lleno (' + clave + ')', 'rojo');
+    }
+    return false;
+  }
+}
+
+/* ---------------------------------------------------------------
+   Grabaciones en IndexedDB.
+
+   Las grabaciones del dataset son lo unico grande que guarda la app
+   (unos 60 kB cada una). En localStorage, que tiene un tope de ~5 MB,
+   llenaban el cupo y arrastraban con ellas a todo lo demas. IndexedDB
+   no tiene ese problema.                                          */
+
+let bd = null;
+function abrirBD() {
+  return new Promise(function (res) {
+    if (bd) return res(bd);
+    if (!window.indexedDB) return res(null);
+    const p = indexedDB.open('cuidapp', 1);
+    p.onupgradeneeded = function () {
+      const d = p.result;
+      if (!d.objectStoreNames.contains('grabaciones')) {
+        d.createObjectStore('grabaciones', { keyPath: 'id' });
+      }
+    };
+    p.onsuccess = function () { bd = p.result; res(bd); };
+    p.onerror = function () { res(null); };
+  });
+}
+async function bdGuardar(g) {
+  const d = await abrirBD(); if (!d) return false;
+  return new Promise(function (res) {
+    const t = d.transaction('grabaciones', 'readwrite');
+    t.objectStore('grabaciones').put(g);
+    t.oncomplete = function () { res(true); };
+    t.onerror = function () { res(false); };
+  });
+}
+async function bdBorrar(id) {
+  const d = await abrirBD(); if (!d) return;
+  const t = d.transaction('grabaciones', 'readwrite');
+  t.objectStore('grabaciones').delete(id);
+}
+async function bdVaciar() {
+  const d = await abrirBD(); if (!d) return;
+  const t = d.transaction('grabaciones', 'readwrite');
+  t.objectStore('grabaciones').clear();
+}
+async function bdLeerTodo() {
+  const d = await abrirBD(); if (!d) return [];
+  return new Promise(function (res) {
+    const p = d.transaction('grabaciones', 'readonly').objectStore('grabaciones').getAll();
+    p.onsuccess = function () { res(p.result || []); };
+    p.onerror = function () { res([]); };
+  });
+}
+
+/** Cuanto espacio queda, para poder avisar antes de quedarse sin sitio. */
+async function espacioLibre() {
+  try {
+    if (navigator.storage && navigator.storage.estimate) {
+      const e = await navigator.storage.estimate();
+      return { usado: e.usage || 0, tope: e.quota || 0 };
+    }
+  } catch (e) {}
+  return null;
 }
 
 const cfg = {
@@ -53,6 +137,7 @@ const cfg = {
   tel:       leer('tel', '112'),
   tgToken:   leer('tgToken', ''),
   tgChat:    leer('tgChat', ''),
+  pin:       leer('pin', ''),
   avisos:    Object.assign(
                { auto: true, sonido: true, vibrar: true, ubicacion: true,
                  cuentaS: 25, escalarS: 60, autocal: true },
@@ -81,6 +166,34 @@ let umb = Object.assign({}, UMB_DEF, leer('umb', {}));
     if (modo === 'paciente') { cfg.rol = 'paciente'; escribir('rol', 'paciente'); }
   }
 })();
+
+/**
+ * Bloqueo del telefono del paciente.
+ *
+ * Sin esto, la persona a la que hay que cuidar puede cambiarse a "cuidador",
+ * disparar caidas falsas o apagar la vigilancia sin darse cuenta. Con un PIN
+ * puesto, su telefono queda reducido a lo unico que necesita: ver que esta
+ * vigilado y poder pedir ayuda.
+ *
+ * Cancelar una alarma NUNCA pide PIN: en ese momento hacen falta segundos,
+ * no contraseñas.
+ */
+let desbloqueado = false;
+function bloqueado() { return !!cfg.pin && !desbloqueado; }
+function pedirPin(motivo) {
+  if (!bloqueado()) return true;
+  const p = prompt(motivo + '\n\nEscribe el PIN de 4 cifras:');
+  if (p === null) return false;
+  if (p.trim() === cfg.pin) {
+    desbloqueado = true;
+    // Se vuelve a bloquear solo a los 3 minutos, para no dejarlo abierto.
+    setTimeout(function () { desbloqueado = false; aplicarRol(); }, 180000);
+    aplicarRol();
+    return true;
+  }
+  alert('PIN incorrecto.');
+  return false;
+}
 
 const esPaciente = function () { return cfg.rol === 'paciente'; };
 const esCuidador = function () { return cfg.rol === 'cuidador'; };
@@ -440,8 +553,10 @@ function onMotion(e) {
     nMuestras = 0; tVentanaHz = t;
     $('hz').textContent = hzActual + ' Hz';
     $('barHz').style.width = Math.min(100, hzActual) + '%';
+    const act = actividadActual();
     $('infoSensor').innerHTML = 'Aceleracion <b>' + svm.toFixed(2) + ' g</b> &nbsp; Giro <b>' +
-      Math.round(gyro) + ' dps</b> &nbsp; Estado <b>' + st.fase + '</b>';
+      Math.round(gyro) + ' dps</b> &nbsp; Estado <b>' + st.fase + '</b>' +
+      (act ? '<br>Ahora mismo: <b>' + act + '</b>' : '');
   }
   serieAcc.push(svm);
   if (serieAcc.length > 140) serieAcc.shift();
@@ -563,6 +678,7 @@ document.addEventListener('visibilitychange', function () {
 
 async function alternarVigilancia() {
   if (vigilando) {
+    if (!pedirPin('Vas a detener la vigilancia.')) return;
     vigilando = false;
     window.removeEventListener('devicemotion', onMotion);
     if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
@@ -600,7 +716,22 @@ const ETIQUETAS = ['caida_frente', 'caida_atras', 'caida_lado', 'caida_silla',
                    'sentarse', 'tumbarse', 'andar', 'escalera', 'gesto'];
 let etiqueta = leer('etiqueta', 'caida_frente');
 let grabando = false, filas = [], tGrab = 0, cronoInt = null;
-let grabs = leer('grabs', []);
+let grabs = [];
+
+// Las grabaciones viven en IndexedDB. Si quedaron algunas en el sitio
+// viejo, se pasan solas la primera vez.
+(async function cargarGrabaciones() {
+  grabs = await bdLeerTodo();
+  const viejas = leer('grabs', []);
+  if (viejas.length) {
+    for (let i = 0; i < viejas.length; i++) await bdGuardar(viejas[i]);
+    grabs = await bdLeerTodo();
+    try { localStorage.removeItem('grabs'); } catch (e) {}
+    log('Grabaciones movidas', viejas.length + ' pasaron a un almacen mas grande', 'verde');
+  }
+  grabs.sort(function (a, b) { return a.id - b.id; });
+  pintarLista();
+})();
 
 function pintarChips() {
   const c = $('chips'); if (!c) return;
@@ -613,10 +744,7 @@ function pintarChips() {
     c.appendChild(d);
   });
 }
-function guardarGrabs() {
-  try { localStorage.setItem('grabs', JSON.stringify(grabs)); }
-  catch (e) { alert('Se lleno el almacenamiento. Descarga el dataset y borra las grabaciones.'); }
-}
+function guardarGrabs() { /* cada grabacion se guarda sola en IndexedDB */ }
 function pintarLista() {
   const c = $('listaGrab'); if (!c) return;
   if (!grabs.length) c.innerHTML = '<div class="prog">Ninguna todavia.</div>';
@@ -628,8 +756,9 @@ function pintarLista() {
       d.innerHTML = '<div><b>' + g.et.replace(/_/g, ' ') + '</b><small>' + g.dur.toFixed(1) +
                     ' s &middot; ' + g.n + ' muestras</small></div><span class="x">&times;</span>';
       d.querySelector('.x').onclick = function () {
+        bdBorrar(g.id);
         grabs = grabs.filter(function (x) { return x.id !== g.id; });
-        guardarGrabs(); pintarLista();
+        pintarLista();
       };
       c.appendChild(d);
     });
@@ -639,7 +768,17 @@ function pintarLista() {
   $('progreso').innerHTML =
     'Caidas: <b>' + cai + '</b> de 11 recomendadas<br>' +
     'Movimientos normales: <b>' + (grabs.length - cai) + '</b> de 18 recomendados<br>' +
-    'Espacio usado: <b>' + kb + ' kB</b> de unos 4000';
+    'Estas grabaciones ocupan <b>' + kb + ' kB</b>';
+  // Espacio real del telefono, no una estimacion inventada.
+  espacioLibre().then(function (e) {
+    if (!e || !e.tope) return;
+    const usadoMb = (e.usado / 1048576).toFixed(1);
+    const topeMb  = Math.round(e.tope / 1048576);
+    const pct = Math.round(e.usado / e.tope * 100);
+    $('progreso').innerHTML += '<br>Espacio del telefono: <b>' + usadoMb + ' MB</b> de ' +
+      topeMb + ' MB (' + pct + '%)' +
+      (pct > 80 ? ' &nbsp;<span style="color:#fbbf24">queda poco</span>' : '');
+  });
 }
 function alternarGrabacion() {
   if (grabando) {
@@ -651,9 +790,16 @@ function alternarGrabacion() {
                m.az.toFixed(3) + ',' + m.gx.toFixed(1) + ',' + m.gy.toFixed(1) + ',' +
                m.gz.toFixed(1) + ',' + m.svm.toFixed(3) + ',' + m.gyro.toFixed(1);
       }).join('\n');
-      grabs.push({ id: Date.now(), et: etiqueta, dur: dur, n: filas.length, csv: csv });
-      guardarGrabs();
-      log('Grabacion guardada', etiqueta + ' - ' + dur.toFixed(1) + ' s', 'verde');
+      const g = { id: Date.now(), et: etiqueta, dur: dur, n: filas.length, csv: csv };
+      grabs.push(g);
+      bdGuardar(g).then(function (ok) {
+        if (ok) log('Grabacion guardada', etiqueta + ' - ' + dur.toFixed(1) + ' s', 'verde');
+        else {
+          log('No se pudo guardar', 'Sin espacio en el telefono', 'rojo');
+          mostrarAviso('<b>No se pudo guardar la grabacion.</b> Al telefono no le queda ' +
+            'espacio. Descarga el dataset y borra las grabaciones.');
+        }
+      });
     } else log('Grabacion descartada', 'Demasiado corta');
     filas = [];
     $('btnGrabar').textContent = 'Empezar a grabar';
@@ -912,6 +1058,36 @@ function recibirEvento(txt, sala) {
   procesarEstado(tipo + (datos ? ';' + datos : ''), true, sala, viejo, prueba);
 }
 
+/**
+ * Que esta haciendo la persona, version del navegador.
+ *
+ * El navegador no da podometro ni sensor de gravedad, asi que se deduce:
+ * la direccion de la gravedad sale de filtrar la aceleracion (sA), y el
+ * movimiento, de cuanto varia la aceleracion en los ultimos segundos.
+ * Menos fino que en la app nativa, pero dice lo mismo.
+ */
+function actividadActual() {
+  if (!vigilando || !totalMuestras) return '';
+
+  const n = Math.min(serieAcc.length, 60);
+  if (n < 10) return '';
+  let suma = 0, suma2 = 0;
+  for (let i = serieAcc.length - n; i < serieAcc.length; i++) {
+    suma += serieAcc[i]; suma2 += serieAcc[i] * serieAcc[i];
+  }
+  const media = suma / n;
+  const desvio = Math.sqrt(Math.max(0, suma2 / n - media * media));
+
+  if (desvio > 0.22) return 'Moviendose';
+
+  const mag = Math.hypot(sA[0], sA[1], sA[2]);
+  if (mag < 0.3) return 'Quieto';
+  const inclinacion = Math.acos(Math.min(1, Math.abs(sA[1]) / mag)) * 180 / Math.PI;
+  if (inclinacion < 35) return 'Quieto, en vertical';
+  if (inclinacion < 65) return 'Quieto, inclinado';
+  return 'Quieto, en horizontal';
+}
+
 function enviarVitales() {
   if (!esPaciente()) return;
   const b = parseInt($('bpm').textContent, 10);
@@ -919,7 +1095,7 @@ function enviarVitales() {
   const pausa = document.visibilityState === 'hidden';
   publicar(cfg.sala, 'vitales', JSON.stringify({
     bpm: isNaN(b) ? 0 : b, bat: isNaN(p) ? 0 : p,
-    vig: vigilando, pausa: pausa, hz: hzActual, t: Date.now()
+    vig: vigilando, pausa: pausa, hz: hzActual, act: actividadActual(), t: Date.now()
   }));
   anotarMuestra(isNaN(p) ? 0 : p, vigilando && !pausa, hzActual, cfg.sala);
 }
@@ -1100,8 +1276,13 @@ function clasificar(sala) {
     det: 'Cambio de app o se apago la pantalla.' };
   if (!e.vitales.vig) return { luz: 'aviso', txt: 'Vigilancia detenida', det: 'No inicio la vigilancia.' };
   const bat = e.vitales.bat;
-  return { luz: 'ok', txt: 'Todo normal',
-    det: 'Hace ' + Math.round(seg) + ' s' + (bat ? '  ·  bateria ' + bat + '%' : '') };
+  // Si el telefono del paciente sabe que esta haciendo, se dice eso en vez
+  // de un "todo normal" generico: para el cuidador vale mucho mas.
+  const act = e.vitales.act;
+  return { luz: 'ok', txt: act || 'Todo normal',
+    det: 'Hace ' + Math.round(seg) + ' s' +
+         (bat ? '  ·  bateria ' + bat + '%' : '') +
+         (e.vitales.pasos > 0 ? '  ·  ' + e.vitales.pasos + ' pasos' : '') };
 }
 
 function pintarPacientes() {
@@ -1276,6 +1457,7 @@ function abrirAjustes() {
   $('inTgToken').value = cfg.tgToken;
   $('inTgChat').value = cfg.tgChat;
   $('inCuenta').value = cfg.avisos.cuentaS;
+  $('inPin').value = cfg.pin;
   $('inEscalar').value = cfg.avisos.escalarS;
   $('chkAutocal').checked = cfg.avisos.autocal;
   $('chkAuto').checked = cfg.avisos.auto;
@@ -1302,6 +1484,7 @@ function guardarAjustes() {
   cfg.tel     = $('inTel').value.trim() || '112';
   cfg.tgToken = $('inTgToken').value.trim();
   cfg.tgChat  = $('inTgChat').value.trim();
+  cfg.pin     = ($('inPin').value || '').replace(/\D/g, '').slice(0, 4);
   cfg.avisos.cuentaS   = Math.max(5, Math.min(120, parseInt($('inCuenta').value, 10) || 25));
   cfg.avisos.escalarS  = Math.max(0, Math.min(600, parseInt($('inEscalar').value, 10) || 0));
   cfg.avisos.autocal   = $('chkAutocal').checked;
@@ -1309,7 +1492,7 @@ function guardarAjustes() {
   cfg.avisos.sonido    = $('chkSonido').checked;
   cfg.avisos.vibrar    = $('chkVibrar').checked;
   cfg.avisos.ubicacion = $('chkUbicacion').checked;
-  ['nombre','rol','sala','tel','tgToken','tgChat','avisos','pacientes'].forEach(function (k) {
+  ['nombre','rol','sala','tel','tgToken','tgChat','avisos','pacientes','pin'].forEach(function (k) {
     escribir(k, cfg[k]);
   });
   CAMPOS.forEach(function (c) {
@@ -1350,12 +1533,16 @@ function aplicarRol() {
   const rol = cfg.rol;
   $('subtitulo').textContent = rol === 'paciente' ? (cfg.nombre || 'Paciente')
                              : rol === 'cuidador' ? 'Cuidador' : 'Desarrollador';
+  // Con PIN puesto, el telefono del paciente se queda solo con lo suyo:
+  // ni grabar datasets, ni menu de pruebas, ni cambiar de papel.
+  const simple = esPaciente() && bloqueado();
   $('navMonitor').style.display   = esPaciente() ? '' : 'none';
-  $('navGrabar').style.display    = esPaciente() ? '' : 'none';
+  $('navGrabar').style.display    = (esPaciente() && !simple) ? '' : 'none';
+  $('navPruebas').style.display   = simple ? 'none' : '';
   $('navPacientes').style.display = esCuidador() ? '' : 'none';
   $('navHistorial').style.display = esAdmin() ? 'none' : '';
   $('navAdmin').style.display     = esAdmin() ? '' : 'none';
-  $('cardApk').style.display      = esAdmin() ? 'none' : '';
+  $('cardApk').style.display      = (esAdmin() || simple) ? 'none' : '';
   ir(esPaciente() ? 'm' : esCuidador() ? 'p' : 'a');
 }
 
@@ -1363,7 +1550,9 @@ function aplicarRol() {
    Enganches de la interfaz
    ================================================================ */
 
-$('btnAjustes').onclick = abrirAjustes;
+$('btnAjustes').onclick = function () {
+  if (pedirPin('Los ajustes estan protegidos.')) abrirAjustes();
+};
 $('btnCerrarAjustes').onclick = function () { $('ajustes').classList.remove('ver'); };
 $('btnGuardar').onclick = guardarAjustes;
 $('btnRestaurar').onclick = function () { umb = Object.assign({}, UMB_DEF); abrirAjustes(); };
@@ -1412,7 +1601,7 @@ $('btnGrabar').onclick = alternarGrabacion;
 $('btnExportar').onclick = exportarDataset;
 $('btnVaciar').onclick = function () {
   if (confirm('Se borran las ' + grabs.length + ' grabaciones. Descargaste el dataset?')) {
-    grabs = []; guardarGrabs(); pintarLista();
+    bdVaciar(); grabs = []; pintarLista();
   }
 };
 $('btnPulso').onclick = medirPulso;

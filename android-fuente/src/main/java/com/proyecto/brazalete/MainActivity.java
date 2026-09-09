@@ -200,9 +200,12 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
             notaSegundoPlano.setVisibility(e.vigilando ? View.VISIBLE : View.GONE);
 
             if (e.hz > 0) {
-                datosSensor.setText(String.format(java.util.Locale.US,
+                String linea = String.format(java.util.Locale.US,
                         "Aceleracion %.2f g   Giro %d dps\nEstado %s   ·   %d Hz",
-                        e.svm, Math.round(e.giro), e.fase, e.hz));
+                        e.svm, Math.round(e.giro), e.fase, e.hz);
+                // Lo que de verdad le interesa a una persona: que esta haciendo.
+                if (!e.detalleContexto.isEmpty()) linea += "\n\n" + e.detalleContexto;
+                datosSensor.setText(linea);
             }
 
             if (!ajustes.esBrazalete()) {

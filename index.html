@@ -353,6 +353,14 @@
   <label>Telefono de emergencias</label>
   <input id="inTel" placeholder="112">
 
+  <h3>Bloqueo del telefono del paciente</h3>
+  <p class="nota">Si pones un PIN, el telefono del paciente queda simplificado: solo ve su
+    estado y el boton de pedir ayuda. Para entrar a estos ajustes, cambiar de papel o
+    detener la vigilancia hara falta el PIN. Sigue pudiendo cancelar una alarma sin el,
+    que para eso tiene que ser rapido.</p>
+  <label>PIN de 4 cifras (vacio = sin bloqueo)</label>
+  <input id="inPin" type="tel" inputmode="numeric" maxlength="4" placeholder="sin bloqueo">
+
   <h3>Aviso por Telegram (opcional)</h3>
   <label>Token del bot</label>
   <input id="inTgToken" placeholder="123456:AAE...">

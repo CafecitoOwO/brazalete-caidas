@@ -30,7 +30,8 @@ public class Nube implements MqttCallback {
     public interface Escucha {
         void alConectar(boolean conectado, String servidor);
         void alEvento(String sala, String tipo, String datos, boolean viejo, boolean prueba);
-        void alVitales(String sala, int bpm, int bateria, boolean vigilando, boolean pausa, int hz);
+        void alVitales(String sala, int bpm, int bateria, boolean vigilando, boolean pausa,
+                       int hz, String actividad, int pasos);
         void alPerfil(String sala, String nombre);
         void alHistorial(String sala, String json);
     }
@@ -146,12 +147,16 @@ public class Nube implements MqttCallback {
         } catch (Exception ignored) { }
     }
 
-    public void enviarVitales(int bpm, int bateria, boolean vigilando, int hz) {
+    public void enviarVitales(int bpm, int bateria, boolean vigilando, int hz,
+                              String actividad, int pasos) {
         try {
             JSONObject j = new JSONObject();
             j.put("bpm", bpm);
             j.put("bat", bateria);
             j.put("vig", vigilando);
+            // Que esta haciendo la persona, no solo si esta viva la conexion.
+            if (actividad != null && !actividad.isEmpty()) j.put("act", actividad);
+            if (pasos >= 0) j.put("pasos", pasos);
             // La app nativa nunca esta "pausada": ese era justamente el
             // problema del navegador que vino a resolver.
             j.put("pausa", false);
@@ -210,7 +215,8 @@ public class Nube implements MqttCallback {
             if (sub.equals("vitales")) {
                 JSONObject j = new JSONObject(txt);
                 escucha.alVitales(sala, j.optInt("bpm"), j.optInt("bat"),
-                        j.optBoolean("vig"), j.optBoolean("pausa"), j.optInt("hz"));
+                        j.optBoolean("vig"), j.optBoolean("pausa"), j.optInt("hz"),
+                        j.optString("act", ""), j.optInt("pasos", -1));
             } else if (sub.equals("perfil")) {
                 JSONObject j = new JSONObject(txt);
                 escucha.alPerfil(sala, j.optString("nombre"));
