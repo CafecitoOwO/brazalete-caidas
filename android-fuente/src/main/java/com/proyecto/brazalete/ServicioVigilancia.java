@@ -55,6 +55,7 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
     private static final String CANAL_ALERTA = "alertas";
     private static final int    ID_NOTIF_VIG    = 1;
     private static final int    ID_NOTIF_ALERTA = 2;
+    private static final int    ID_NOTIF_AVISO  = 3;
 
     private static final float G = 9.80665f;
 
@@ -533,6 +534,34 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         avisar();
     }
 
+    /** Manda un toque a otro cuidador para que entre a revisar. */
+    public void avisarACuidador(String sala, String idDestino, String deNombre, String paciente) {
+        nube.enviarAviso(sala, idDestino, deNombre, paciente);
+    }
+
+    @Override public void alAviso(String sala, String idDestino, String deNombre, String paciente) {
+        // Solo si el toque va dirigido a este telefono.
+        if (!ajustes.getIdDispositivo().equals(idDestino)) return;
+
+        String quien = (deNombre == null || deNombre.isEmpty()) ? "Otro cuidador" : deNombre;
+        String aQuien = (paciente == null || paciente.isEmpty()) ? "una persona" : paciente;
+
+        NotificationCompat.Builder b = new NotificationCompat.Builder(this, CANAL_ALERTA)
+                .setContentTitle(quien + " te pide que revises")
+                .setContentText("Entra a ver como esta " + aQuien + ".")
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setAutoCancel(true)
+                .setContentIntent(abrirApp());
+        getSystemService(NotificationManager.class).notify(ID_NOTIF_AVISO, b.build());
+
+        if (vibrador != null && vibrador.hasVibrator()) {
+            vibrador.vibrate(VibrationEffect.createWaveform(new long[]{0, 180, 120, 180}, -1));
+        }
+        avisar();
+    }
+
     @Override public void alPresencia(String sala, String id, String nombre, long cuando) {
         if (id == null || id.isEmpty()) return;
         EstadoPac p = pac(sala);
@@ -794,6 +823,21 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         estado.porcentajeVigilancia = muestras > 0 ? Math.round(activas * 100f / muestras) : -1;
         estado.desde = primera;
         estado.registros = historial.size();
+    }
+
+    /**
+     * El historial en crudo, para dibujarlo. Se devuelve una copia: la
+     * lista viva la toca el hilo del servicio mientras la vista lee.
+     */
+    public java.util.List<String> historialCrudo() {
+        try {
+            return new java.util.ArrayList<>(historial);
+        } catch (Exception e) {
+            // La lista la escribe el hilo del servicio. Si justo cambia
+            // mientras se copia, se devuelve vacia y el siguiente refresco
+            // la coge entera: mas vale un dibujo tarde que un cierre.
+            return new java.util.ArrayList<>();
+        }
     }
 
     /** Historial completo en CSV, para compartirlo o guardarlo. */

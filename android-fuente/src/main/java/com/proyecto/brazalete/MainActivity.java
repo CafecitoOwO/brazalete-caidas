@@ -61,7 +61,8 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
     private EditText campoNombre;
     private TextView alertaTitulo, alertaCuenta, alertaTexto, alertaDatos;
     private LinearLayout tarjetaCuidador, tarjetaHistorial, pantallaAlerta;
-    private TextView statsHistorial;
+    private TextView statsHistorial, resumenRango;
+    private GraficaHistorial graficaHistorial;
     private Button btnVigilar;
     private EditText campoSala;
     private RadioButton modoBrazalete, modoCuidador;
@@ -79,6 +80,8 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
         tarjetaCuidador  = findViewById(R.id.tarjetaCuidador);
         tarjetaHistorial = findViewById(R.id.tarjetaHistorial);
         statsHistorial   = findViewById(R.id.statsHistorial);
+        resumenRango     = findViewById(R.id.resumenRango);
+        graficaHistorial = findViewById(R.id.graficaHistorial);
         infoPaciente     = findViewById(R.id.infoPaciente);
         filasPacientes   = findViewById(R.id.filasPacientes);
         filasCuidadores  = findViewById(R.id.filasCuidadores);
@@ -181,6 +184,14 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
         });
 
         findViewById(R.id.btnExportar).setOnClickListener(v -> guardarHistorial());
+
+        findViewById(R.id.btnRangoDia).setOnClickListener(v ->
+                cambiarRango(GraficaHistorial.DIA));
+        findViewById(R.id.btnRangoSemana).setOnClickListener(v ->
+                cambiarRango(GraficaHistorial.SEMANA));
+        findViewById(R.id.btnRangoMes).setOnClickListener(v ->
+                cambiarRango(GraficaHistorial.MES));
+        marcarRangoElegido(GraficaHistorial.DIA);
 
         // Tocar la foto de arriba abre el menu de perfil.
         findViewById(R.id.miFoto).setOnClickListener(v -> menuPerfil());
@@ -392,19 +403,40 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
                 new java.util.ArrayList<>(p.cuidadores.values());
         java.util.Collections.sort(orden, (a, b) -> Long.compare(b.ultimaVez, a.ultimaVez));
 
+        final String miId = ajustes.getIdDispositivo();
         long masReciente = 0;
         for (ServicioVigilancia.Persona q : orden) {
             if (q.ultimaVez > masReciente) masReciente = q.ultimaVez;
             View f = getLayoutInflater().inflate(R.layout.item_persona, destino, false);
             boolean activo = System.currentTimeMillis() - q.ultimaVez < 300000;
+            boolean soyYo = miId.equals(q.id);
+
             ((TextView) f.findViewById(R.id.nombreP)).setText(
-                    q.nombre == null || q.nombre.isEmpty() ? "Cuidador" : q.nombre);
+                    (q.nombre == null || q.nombre.isEmpty() ? "Cuidador" : q.nombre)
+                    + (soyYo ? "  (vos)" : ""));
             ((TextView) f.findViewById(R.id.detalleP)).setText(
                     activo ? "Revisando ahora" : "Ultima vez que reviso: " + haceCuanto(q.ultimaVez));
             f.findViewById(R.id.luzP).getBackground().setTint(activo ? 0xFF4ADE80 : 0xFFFBBF24);
-            f.findViewById(R.id.btnAvisarP).setOnClickListener(x ->
-                    Toast.makeText(this, "Avisar a " + q.nombre + ": pendiente",
-                            Toast.LENGTH_SHORT).show());
+
+            Button avisar = f.findViewById(R.id.btnAvisarP);
+            if (soyYo) {
+                // No tiene sentido darse un toque a uno mismo.
+                avisar.setVisibility(View.GONE);
+            } else {
+                avisar.setVisibility(View.VISIBLE);
+                final String destinoId = q.id;
+                final String destinoNombre = q.nombre;
+                avisar.setOnClickListener(x -> {
+                    ServicioVigilancia sv = ServicioVigilancia.get();
+                    if (sv == null) return;
+                    sv.avisarACuidador(sala, destinoId,
+                            ajustes.getNombre().isEmpty() ? "Un cuidador" : ajustes.getNombre(),
+                            nombreDePaciente(sala));
+                    Toast.makeText(this, "Aviso enviado a " +
+                            (destinoNombre == null || destinoNombre.isEmpty() ? "ese cuidador" : destinoNombre),
+                            Toast.LENGTH_SHORT).show();
+                });
+            }
             destino.addView(f);
         }
 
@@ -418,6 +450,11 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
             av.setPadding(0, 10, 0, 0);
             destino.addView(av);
         }
+    }
+
+    private String nombreDePaciente(String sala) {
+        for (String[] p : ajustes.getPacientes()) if (p[0].equals(sala)) return p[1];
+        return sala;
     }
 
     private String haceCuanto(long ts) {
@@ -721,6 +758,7 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
                              ? "Vigilancia activa el " + e.porcentajeVigilancia + "% del tiempo"
                              : ""));
                 }
+                refrescarGrafica();
             }
 
             if (e.alerta.isEmpty()) {
@@ -767,6 +805,33 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
                 }
             }
         });
+    }
+
+    private void cambiarRango(long ms) {
+        graficaHistorial.setRango(ms);
+        marcarRangoElegido(ms);
+        refrescarGrafica();
+    }
+
+    /** El rango activo se ve mas claro; los otros quedan apagados. */
+    private void marcarRangoElegido(long ms) {
+        int[] ids = { R.id.btnRangoDia, R.id.btnRangoSemana, R.id.btnRangoMes };
+        long[] rangos = { GraficaHistorial.DIA, GraficaHistorial.SEMANA, GraficaHistorial.MES };
+        for (int i = 0; i < ids.length; i++) {
+            Button b = findViewById(ids[i]);
+            boolean elegido = rangos[i] == ms;
+            b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(
+                    elegido ? 0xFF3F7D4F : 0xFF3A3733));
+            b.setAlpha(elegido ? 1f : 0.75f);
+        }
+    }
+
+    /** Vuelve a leer el historial del servicio y redibuja. */
+    private void refrescarGrafica() {
+        ServicioVigilancia s = ServicioVigilancia.get();
+        if (s == null || graficaHistorial == null) return;
+        graficaHistorial.setHistorial(s.historialCrudo());
+        resumenRango.setText(graficaHistorial.resumenDelRango());
     }
 
     /** Escribe el historial como CSV en la carpeta Descargas del telefono. */

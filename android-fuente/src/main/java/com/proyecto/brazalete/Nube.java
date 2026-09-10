@@ -35,6 +35,8 @@ public class Nube implements MqttCallback {
         void alPerfil(String sala, String nombre, String fotoBase64);
         /** Un cuidador aviso de que entro a revisar a esta persona. */
         void alPresencia(String sala, String id, String nombre, long cuando);
+        /** Otro cuidador te pide que entres a revisar a esta persona. */
+        void alAviso(String sala, String idDestino, String deNombre, String paciente);
         /** Ultimos valores de aceleracion del paciente, para las graficas. */
         void alOndas(String sala, float[] valores);
         void alHistorial(String sala, String json);
@@ -213,6 +215,23 @@ public class Nube implements MqttCallback {
         } catch (Exception ignored) { }
     }
 
+    /**
+     * Un toque de un cuidador a otro: "entra a revisar a esta persona".
+     *
+     * No se retiene: un aviso viejo no le sirve a nadie, y ademas
+     * volveria a sonar cada vez que alguien abre la app.
+     */
+    public void enviarAviso(String sala, String idDestino, String deNombre, String paciente) {
+        try {
+            JSONObject j = new JSONObject();
+            j.put("de", miId);
+            j.put("deNombre", deNombre == null ? "" : deNombre);
+            j.put("paciente", paciente == null ? "" : paciente);
+            j.put("ts", System.currentTimeMillis());
+            publicar(sala, "aviso/" + idDestino, j.toString(), false);
+        } catch (Exception ignored) { }
+    }
+
     /** El cuidador pide (o deja de pedir) escuchar. */
     public void pedirEscuchar(String sala, boolean activo, String nombre) {
         try {
@@ -287,6 +306,12 @@ public class Nube implements MqttCallback {
                 if (miId.equals(j.optString("de"))) return;   // eco propio
                 escucha.alAudio(sala, canal, j.optString("t"), j.optString("d"),
                         j.optBoolean("activo"), j.optString("de"));
+            } else if (sub.equals("aviso")) {
+                // brz/<sala>/aviso/<id del cuidador al que va dirigido>
+                String destino = partes.length > 3 ? partes[3] : "";
+                JSONObject j = new JSONObject(txt);
+                if (miId.equals(j.optString("de"))) return;   // no avisarse a uno mismo
+                escucha.alAviso(sala, destino, j.optString("deNombre"), j.optString("paciente"));
             } else if (sub.equals("presencia")) {
                 JSONObject j = new JSONObject(txt);
                 escucha.alPresencia(sala, j.optString("id"), j.optString("nombre"),

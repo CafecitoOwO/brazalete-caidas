@@ -239,6 +239,60 @@
                     android:textColor="@color/texto"
                     android:textSize="14sp" />
 
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btnRangoDia"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="6dp"
+                        android:layout_weight="1"
+                        android:backgroundTint="@color/borde"
+                        android:text="24 h"
+                        android:textColor="@color/texto"
+                        android:textSize="12sp" />
+
+                    <Button
+                        android:id="@+id/btnRangoSemana"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="6dp"
+                        android:layout_weight="1"
+                        android:backgroundTint="@color/borde"
+                        android:text="7 dias"
+                        android:textColor="@color/texto"
+                        android:textSize="12sp" />
+
+                    <Button
+                        android:id="@+id/btnRangoMes"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:backgroundTint="@color/borde"
+                        android:text="30 dias"
+                        android:textColor="@color/texto"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <com.proyecto.brazalete.GraficaHistorial
+                    android:id="@+id/graficaHistorial"
+                    android:layout_width="match_parent"
+                    android:layout_height="130dp"
+                    android:layout_marginTop="10dp" />
+
+                <TextView
+                    android:id="@+id/resumenRango"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:lineSpacingExtra="3dp"
+                    android:textColor="@color/apagado"
+                    android:textSize="12sp" />
+
                 <Button
                     android:id="@+id/btnExportar"
                     android:layout_width="match_parent"
