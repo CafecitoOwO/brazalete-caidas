@@ -116,6 +116,10 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         /** Quien mas vigila a esta persona. Clave: id del cuidador. */
         public final java.util.LinkedHashMap<String, Persona> cuidadores = new java.util.LinkedHashMap<>();
         public String ubicacion = "";
+        /** Contexto que manda el telefono del paciente. */
+        public String postura = "", montaje = "", sensores = "";
+        public int inclinacion = 0, lux = -1;
+        public boolean cerca = false;
         public double lat, lon;
         /** Su foto de perfil, en base64, tal como la mando. */
         public String foto = "";
@@ -159,6 +163,31 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
 
     private final Handler hilo = new Handler(Looper.getMainLooper());
     private final float[] ultimoGiro = {0, 0, 0};
+
+    /** Solo existe mientras se esta calibrando. */
+    private Calibracion calibracion;
+
+    public Calibracion getCalibracion() { return calibracion; }
+
+    /** Empieza una calibracion nueva, tirando la anterior si quedaba. */
+    public Calibracion nuevaCalibracion() {
+        calibracion = new Calibracion();
+        return calibracion;
+    }
+
+    public void terminarCalibracion() {
+        if (calibracion != null) calibracion.cancelar();
+        calibracion = null;
+        detector.reiniciar();
+    }
+
+    /** Los umbrales que usa ahora mismo el detector. */
+    public Detector.Umbrales umbrales() { return detector.u; }
+
+    /** Lo que el telefono es capaz de medir, tal cual lo dice Android. */
+    public String sensoresDelTelefono() {
+        return contexto == null ? "" : contexto.sensoresDisponibles();
+    }
 
     /** Eventos guardados, en JSON, para publicarlos como historial. */
     private final java.util.List<String> historial = new java.util.ArrayList<>();
@@ -334,6 +363,15 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
             avisar();
         }
 
+        // Mientras se calibra, las muestras van a la calibracion y el
+        // detector se queda al margen: no tiene sentido dar una alerta
+        // justo cuando le estamos pidiendo a la persona que se deje caer
+        // en una silla.
+        if (calibracion != null && calibracion.estaMidiendo()) {
+            if (calibracion.muestra(estado.svm, estado.giro, t)) avisar();
+            return;
+        }
+
         if (!estado.alerta.isEmpty()) return;   // ya hay una alerta en curso
 
         Detector.Evento ev = detector.muestra(ax, ay, az,
@@ -461,6 +499,13 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
                 if (ajustes.esBrazalete()) {
                     nube.enviarVitales(0, nivelBateria(), estado.vigilando, estado.hz,
                             estado.actividad, estado.pasos, ondasRecientes());
+                    if (contexto != null) {
+                        nube.enviarContexto(contexto.getPostura().name(),
+                                Math.round(contexto.getInclinacion()),
+                                contexto.getLux(), contexto.getCerca(),
+                                contexto.getMontaje().name(),
+                                contexto.sensoresDisponibles());
+                    }
                 }
                 // El cuidador avisa de que sigue mirando.
                 if (!ajustes.esBrazalete()) {
@@ -595,6 +640,19 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         if (vibrador != null && vibrador.hasVibrator()) {
             vibrador.vibrate(VibrationEffect.createWaveform(new long[]{0, 180, 120, 180}, -1));
         }
+        avisar();
+    }
+
+    @Override public void alContexto(String sala, String postura, int inclinacion,
+                                     int lux, boolean cerca, String montaje,
+                                     String sensores) {
+        EstadoPac p = pac(sala);
+        p.postura = postura;
+        p.inclinacion = inclinacion;
+        p.lux = lux;
+        p.cerca = cerca;
+        p.montaje = montaje;
+        if (sensores != null && !sensores.isEmpty()) p.sensores = sensores;
         avisar();
     }
 

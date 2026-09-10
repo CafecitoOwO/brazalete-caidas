@@ -174,6 +174,7 @@ public class Contexto implements SensorEventListener {
     // ------------------------------------------------------------------
     // Lo que se muestra y se publica
 
+    public Montaje getMontaje()     { return montaje; }
     public Postura getPostura()     { return postura; }
     public Actividad getActividad() { return actividad; }
     public float getInclinacion()   { return inclinacionGrados; }

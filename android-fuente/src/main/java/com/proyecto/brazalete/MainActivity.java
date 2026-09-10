@@ -219,11 +219,15 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
         findViewById(R.id.menuApp).setOnClickListener(v -> {
             android.widget.PopupMenu m = new android.widget.PopupMenu(this, v);
             m.getMenu().add("Mi perfil");
+            m.getMenu().add("Ver todos mis datos");
+            if (ajustes.esBrazalete()) m.getMenu().add("Calibrar con mis movimientos");
             m.getMenu().add("Compartir enlace al cuidador");
             m.getMenu().add("Guardar historial en Descargas");
             m.setOnMenuItemClickListener(it -> {
                 String t = String.valueOf(it.getTitle());
                 if (t.equals("Mi perfil")) menuPerfil();
+                else if (t.equals("Ver todos mis datos")) verMisDatos();
+                else if (t.equals("Calibrar con mis movimientos")) calibrar();
                 else if (t.equals("Compartir enlace al cuidador")) compartirEnlace();
                 else if (t.equals("Guardar historial en Descargas")) guardarHistorial();
                 return true;
@@ -462,14 +466,14 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
     /** Lo que en el dibujo cuelga del icono de rayas de cada paciente. */
     private void menuPaciente(View ancla, String sala) {
         android.widget.PopupMenu m = new android.widget.PopupMenu(this, ancla);
-        m.getMenu().add("Ver perfil");
+        m.getMenu().add("Ver todos sus datos");
         m.getMenu().add("Ver en el mapa");
         m.getMenu().add("Descargar datos");
         m.getMenu().add("Cambiar el nombre");
         m.getMenu().add("Quitar de la lista");
         m.setOnMenuItemClickListener(it -> {
             String t = String.valueOf(it.getTitle());
-            if (t.equals("Ver perfil")) verPerfil(sala);
+            if (t.equals("Ver todos sus datos")) verPerfil(sala);
             else if (t.equals("Ver en el mapa")) abrirMapa(sala);
             else if (t.equals("Descargar datos")) guardarHistorial();
             else if (t.equals("Cambiar el nombre")) renombrarPaciente(sala);
@@ -521,33 +525,263 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
                 .show();
     }
 
-    /** Ficha de la persona: lo que sabemos de ella ahora mismo. */
+    /**
+     * Toda la informacion de esa persona, no un resumen.
+     *
+     * El telefono del paciente lee siete sensores; hasta ahora al cuidador
+     * le llegaban cuatro cifras. Aqui esta lo que la app sabe de verdad,
+     * incluida la lista de sensores que ese telefono tiene.
+     */
     private void verPerfil(String sala) {
         ServicioVigilancia s = ServicioVigilancia.get();
         ServicioVigilancia.EstadoPac p = (s == null) ? null : s.pacientes.get(sala);
         String nom = ajustes.nombreDe(sala);
-        StringBuilder sb = new StringBuilder();
-        sb.append("Codigo de sala: ").append(sala).append("\n");
+        StringBuilder b = new StringBuilder();
+
         if (p == null || p.ultimo == 0) {
-            sb.append("\nTodavia no se conecto ninguna vez.");
+            b.append("Todavia no se conecto ninguna vez.\n\n");
+            b.append("Codigo de sala: ").append(sala);
         } else {
-            sb.append("Ultimo dato: ").append(haceCuanto(p.ultimo)).append("\n");
-            if (p.bat >= 0)   sb.append("Bateria: ").append(p.bat).append("%\n");
-            if (p.bpm > 0)    sb.append("Pulso: ").append(p.bpm).append(" bpm\n");
-            if (p.pasos >= 0) sb.append("Pasos: ").append(p.pasos).append("\n");
-            if (!p.actividad.isEmpty()) sb.append("Actividad: ").append(p.actividad).append("\n");
-            sb.append("Vigilando: ")
-              .append(p.vig ? (p.pausa ? "en pausa" : "si") : "no").append("\n");
-            if (!p.ubicacion.isEmpty()) sb.append("Ubicacion: ").append(p.ubicacion).append("\n");
-            sb.append("Cuidadores que la siguen: ").append(p.cuidadores.size());
-            if (s != null) sb.append("\nAlertas en la ultima hora: ")
-                             .append(s.alertasUltimaHora(sala));
+            long seg = (System.currentTimeMillis() - p.ultimo) / 1000;
+            b.append("CONEXION\n");
+            b.append("  Ultimo dato: ").append(haceCuanto(p.ultimo)).append("\n");
+            b.append("  Estado: ").append(seg > 45 ? "sin señal" : "en linea").append("\n");
+            b.append("  Vigilando: ")
+             .append(p.vig ? (p.pausa ? "en pausa" : "si") : "no").append("\n");
+            b.append("  Codigo de sala: ").append(sala).append("\n\n");
+
+            b.append("MOVIMIENTO\n");
+            if (!p.actividad.isEmpty()) b.append("  Actividad: ").append(p.actividad).append("\n");
+            if (!p.postura.isEmpty())   b.append("  Postura: ").append(bonito(p.postura)).append("\n");
+            b.append("  Inclinacion: ").append(p.inclinacion).append(" grados\n");
+            if (p.pasos >= 0) b.append("  Pasos hoy: ").append(p.pasos).append("\n");
+            if (!p.montaje.isEmpty()) b.append("  Lo lleva en: ").append(bonito(p.montaje)).append("\n");
+            b.append("\n");
+
+            b.append("ENTORNO\n");
+            b.append("  Luz: ").append(p.lux < 0 ? "sin dato"
+                    : p.lux + " lux (" + (p.lux < 10 ? "oscuro"
+                    : p.lux < 200 ? "interior" : "luz fuerte") + ")").append("\n");
+            b.append("  Sensor de proximidad: ")
+             .append(p.cerca ? "tapado (bolsillo o boca abajo)" : "despejado").append("\n");
+            if (!p.ubicacion.isEmpty()) b.append("  Ubicacion: ").append(p.ubicacion).append("\n");
+            else b.append("  Ubicacion: solo se envia al saltar una alerta\n");
+            b.append("\n");
+
+            b.append("TELEFONO\n");
+            b.append("  Bateria: ").append(p.bat < 0 ? "sin dato" : p.bat + "%").append("\n");
+            b.append("  Midiendo: ").append(p.hz).append(" veces por segundo\n");
+            if (p.bpm > 0) b.append("  Pulso: ").append(p.bpm).append(" bpm\n");
+            b.append("  Cuidadores que la siguen: ").append(p.cuidadores.size()).append("\n");
+            if (s != null) {
+                b.append("  Alertas en la ultima hora: ")
+                 .append(s.alertasUltimaHora(sala)).append("\n");
+            }
+
+            if (!p.sensores.isEmpty()) {
+                b.append("\nSENSORES DE ESE TELEFONO\n");
+                for (String linea : p.sensores.split("\n")) {
+                    if (!linea.trim().isEmpty()) b.append("  ").append(linea.trim()).append("\n");
+                }
+            }
         }
+
         new androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle(nom.isEmpty() ? "Perfil" : "Perfil de " + nom)
-                .setMessage(sb.toString())
+                .setTitle(nom.isEmpty() ? "Informacion" : "Informacion de " + nom)
+                .setMessage(b.toString())
                 .setPositiveButton("Cerrar", null)
                 .show();
+    }
+
+    /**
+     * Calibracion guiada: mide como se mueve esta persona y sube los
+     * umbrales justo por encima de eso.
+     *
+     * Solo calibra el lado negativo (que NO es una caida). Para el lado
+     * positivo hacen falta caidas grabadas sobre un colchon, y eso se hace
+     * con la pestaña de grabar y el script de analisis.
+     */
+    private void calibrar() {
+        ServicioVigilancia s = ServicioVigilancia.get();
+        if (s == null || !s.getEstado().vigilando) {
+            Toast.makeText(this, "Inicia la vigilancia antes de calibrar",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Calibrar con tus movimientos")
+                .setMessage("Vamos a medir como te mueves normalmente, en cuatro "
+                          + "pasos de unos 15 segundos. Con eso la app aprende que "
+                          + "NO es una caida en tu caso.\n\n"
+                          + "Lleva el telefono donde lo lleves siempre. Si un dia "
+                          + "lo cambias de sitio, hay que calibrar otra vez.\n\n"
+                          + "No hace falta que te caigas.".replace("  ", " "))
+                .setPositiveButton("Empezar", (d, w) ->
+                        etapaCalibracion(s.nuevaCalibracion(), 0))
+                .setNegativeButton("Ahora no", null)
+                .show();
+    }
+
+    /** Va pidiendo una etapa detras de otra y al final enseña el resultado. */
+    private void etapaCalibracion(Calibracion cal, int i) {
+        ServicioVigilancia s = ServicioVigilancia.get();
+        if (s == null) return;
+        Calibracion.Etapa[] etapas = Calibracion.Etapa.values();
+        if (i >= etapas.length) { finCalibracion(cal); return; }
+        Calibracion.Etapa e = etapas[i];
+
+        androidx.appcompat.app.AlertDialog dlg =
+                new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle((i + 1) + " de " + etapas.length + ": " + e.titulo)
+                .setMessage(e.instruccion + "\n\nEmpieza cuando toques Ya.")
+                .setCancelable(false)
+                .setPositiveButton("Ya", null)
+                .setNegativeButton("Dejarlo", (d, w) -> s.terminarCalibracion())
+                .create();
+
+        dlg.setOnShowListener(x -> dlg.getButton(
+                androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener(y -> {
+            dlg.dismiss();
+            cal.empezar(e, android.os.SystemClock.elapsedRealtime());
+            cuentaAtrasCalibracion(cal, i, e);
+        }));
+        dlg.show();
+    }
+
+    /** El cartel con la cuenta atras mientras dura la etapa. */
+    private void cuentaAtrasCalibracion(Calibracion cal, int i, Calibracion.Etapa e) {
+        androidx.appcompat.app.AlertDialog dlg =
+                new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle(e.titulo)
+                .setMessage(e.instruccion)
+                .setCancelable(false)
+                .create();
+        dlg.show();
+
+        final Runnable[] tic = new Runnable[1];
+        tic[0] = () -> {
+            if (!dlg.isShowing()) return;
+            ServicioVigilancia sv = ServicioVigilancia.get();
+            if (sv == null) { dlg.dismiss(); return; }
+            int quedan = cal.segundosRestantes(android.os.SystemClock.elapsedRealtime());
+            if (cal.estaMidiendo()) {
+                dlg.setMessage(e.instruccion + "\n\n" + quedan + " s");
+                btnVigilar.postDelayed(tic[0], 250);
+            } else {
+                dlg.dismiss();
+                etapaCalibracion(cal, i + 1);
+            }
+        };
+        btnVigilar.postDelayed(tic[0], 250);
+    }
+
+    private void finCalibracion(Calibracion cal) {
+        ServicioVigilancia s = ServicioVigilancia.get();
+        if (s == null) return;
+        if (!cal.hayDatosSuficientes()) {
+            s.terminarCalibracion();
+            new androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle("No alcanzo")
+                    .setMessage("Llegaron muy pocas muestras. Comprueba que la "
+                              + "vigilancia estaba activa y vuelve a intentarlo.")
+                    .setPositiveButton("Cerrar", null)
+                    .show();
+            return;
+        }
+        Calibracion.Resultado r = cal.calcular(s.umbrales());
+        String msg = "Con " + r.muestras + " muestras tuyas:\n\n"
+                + "Lo mas fuerte que generaste haciendo vida normal fue "
+                + String.format(java.util.Locale.US, "%.2f", r.picoNormalG) + " g"
+                + " y " + Math.round(r.picoNormalDps) + " grados/s.\n\n"
+                + "Umbral de impacto: "
+                + String.format(java.util.Locale.US, "%.2f", r.antesImpactoG) + " g  ->  "
+                + String.format(java.util.Locale.US, "%.2f", r.impactoG) + " g\n"
+                + "Umbral de giro: " + Math.round(r.antesGiroDps) + "  ->  "
+                + Math.round(r.giroDps) + " grados/s\n"
+                + "Quietud exigida: "
+                + String.format(java.util.Locale.US, "%.2f", r.antesQuietoTolG) + "  ->  "
+                + String.format(java.util.Locale.US, "%.2f", r.quietoTolG) + " g\n\n"
+                + "Esto quita falsas alarmas. Para afinar la deteccion de caidas "
+                + "de verdad hacen falta caidas grabadas sobre un colchon.";
+
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Listo")
+                .setMessage(msg)
+                .setPositiveButton("Guardar", (d, w) -> {
+                    Calibracion.aplicar(ajustes, s.umbrales(), r);
+                    s.terminarCalibracion();
+                    Toast.makeText(this, "Umbrales guardados", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("Dejar los de antes", (d, w) -> s.terminarCalibracion())
+                .setCancelable(false)
+                .show();
+    }
+
+    /**
+     * Lo mismo que ve el cuidador de ti, pero mirandote a ti mismo.
+     *
+     * Incluye la lista de sensores que este telefono tiene de verdad, que
+     * es lo que se pedia: saber que datos se pueden sacar de aqui.
+     */
+    private void verMisDatos() {
+        ServicioVigilancia s = ServicioVigilancia.get();
+        if (s == null) {
+            Toast.makeText(this, "El servicio no esta activo", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        ServicioVigilancia.Estado e = s.getEstado();
+        StringBuilder b = new StringBuilder();
+
+        b.append("AHORA MISMO\n");
+        b.append("  Fuerza medida: ")
+         .append(String.format(java.util.Locale.US, "%.2f", e.svm)).append(" g\n");
+        b.append("  Giro: ").append(Math.round(e.giro)).append(" grados/s\n");
+        b.append("  Midiendo: ").append(e.hz).append(" veces por segundo\n");
+        b.append("  Fase del detector: ").append(e.fase).append("\n");
+        if (!e.actividad.isEmpty()) b.append("  Actividad: ").append(e.actividad).append("\n");
+        b.append("  Bateria: ").append(nivelBateriaTexto()).append("\n\n");
+
+        Detector.Umbrales u = s.umbrales();
+        b.append("UMBRALES QUE USA\n");
+        b.append("  Impacto minimo: ")
+         .append(String.format(java.util.Locale.US, "%.2f", u.impactoG)).append(" g\n");
+        b.append("  Giro: ").append(Math.round(u.giroDps)).append(" grados/s\n");
+        b.append("  Quietud exigida: ")
+         .append(String.format(java.util.Locale.US, "%.2f", u.quietoTolG)).append(" g\n");
+        b.append("  Quieto durante: ").append(u.quietoMs).append(" ms\n");
+        b.append("  Puntos para avisar: ").append(u.puntosMin).append("\n");
+        b.append("  Margen para cancelar: ").append(u.cuentaMs / 1000).append(" s\n\n");
+
+        String sensores = s.sensoresDelTelefono();
+        b.append("SENSORES DE ESTE TELEFONO\n");
+        b.append(sensores.isEmpty()
+                ? "  (se leen al iniciar la vigilancia)"
+                : sensores);
+
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Todos mis datos")
+                .setMessage(b.toString())
+                .setPositiveButton("Cerrar", null)
+                .setNeutralButton(ajustes.esBrazalete() ? "Calibrar" : null,
+                        ajustes.esBrazalete() ? (d, w) -> calibrar() : null)
+                .show();
+    }
+
+    private String nivelBateriaTexto() {
+        android.content.IntentFilter f =
+                new android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED);
+        Intent i = registerReceiver(null, f);
+        if (i == null) return "sin dato";
+        int n = i.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1);
+        int max = i.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1);
+        return (n < 0 || max <= 0) ? "sin dato" : Math.round(n * 100f / max) + "%";
+    }
+
+    /** VERTICAL -> Vertical, BOLSILLO -> Bolsillo. */
+    private String bonito(String enumName) {
+        if (enumName == null || enumName.isEmpty()) return "";
+        String x = enumName.toLowerCase(java.util.Locale.ROOT).replace('_', ' ');
+        return Character.toUpperCase(x.charAt(0)) + x.substring(1);
     }
 
     /**

@@ -33,6 +33,9 @@ public class Nube implements MqttCallback {
         void alVitales(String sala, int bpm, int bateria, boolean vigilando, boolean pausa,
                        int hz, String actividad, int pasos);
         void alPerfil(String sala, String nombre, String fotoBase64);
+        /** Postura, luz, proximidad y demas de esa persona. */
+        void alContexto(String sala, String postura, int inclinacion, int lux,
+                        boolean cerca, String montaje, String sensores);
         /** Un cuidador aviso de que entro a revisar a esta persona. */
         void alPresencia(String sala, String id, String nombre, long cuando);
         /** Otro cuidador te pide que entres a revisar a esta persona. */
@@ -157,6 +160,27 @@ public class Nube implements MqttCallback {
             j.put("de", miId);
             j.put("prueba", prueba);
             publicar(sala, "evento", j.toString(), true);
+        } catch (Exception ignored) { }
+    }
+
+    /**
+     * Ademas de los vitales, viaja el contexto: postura, inclinacion, luz,
+     * proximidad y como lleva el telefono. Todo eso ya se leia en el
+     * telefono del paciente y se quedaba ahi, asi que el cuidador veia una
+     * fraccion de lo que la app sabe.
+     */
+    public void enviarContexto(String postura, int inclinacion, float lux,
+                               boolean cerca, String montaje, String sensores) {
+        try {
+            JSONObject j = new JSONObject();
+            j.put("postura", postura == null ? "" : postura);
+            j.put("incl", inclinacion);
+            if (lux >= 0) j.put("lux", Math.round(lux));
+            j.put("cerca", cerca);
+            j.put("montaje", montaje == null ? "" : montaje);
+            if (sensores != null && !sensores.isEmpty()) j.put("sensores", sensores);
+            j.put("ts", System.currentTimeMillis());
+            publicar(salaPropia, "contexto", j.toString(), true);
         } catch (Exception ignored) { }
     }
 
@@ -316,6 +340,11 @@ public class Nube implements MqttCallback {
                 JSONObject j = new JSONObject(txt);
                 escucha.alPresencia(sala, j.optString("id"), j.optString("nombre"),
                         j.optLong("ts"));
+            } else if (sub.equals("contexto")) {
+                JSONObject j = new JSONObject(txt);
+                escucha.alContexto(sala, j.optString("postura"), j.optInt("incl"),
+                        j.optInt("lux", -1), j.optBoolean("cerca"),
+                        j.optString("montaje"), j.optString("sensores"));
             } else if (sub.equals("perfil")) {
                 JSONObject j = new JSONObject(txt);
                 escucha.alPerfil(sala, j.optString("nombre"), j.optString("foto", ""));
