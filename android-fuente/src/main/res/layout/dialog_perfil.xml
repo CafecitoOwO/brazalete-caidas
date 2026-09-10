@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tu perfil: la pantalla que faltaba.
+
+     Antes "perfil" era solo un menu de cuatro acciones sueltas: no habia
+     ningun sitio donde VER quien eres en la app. Esto lo enseña: la foto,
+     el nombre, que rol tienes, tu codigo, y a quien estas conectado. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="24dp"
+    android:paddingTop="20dp"
+    android:paddingEnd="24dp"
+    android:paddingBottom="8dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageView
+            android:id="@+id/perfilFoto"
+            android:layout_width="72dp"
+            android:layout_height="72dp"
+            android:background="@drawable/circulo"
+            android:contentDescription="Tu foto de perfil"
+            android:padding="10dp"
+            android:src="@mipmap/ic_launcher" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/perfilNombre"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="2"
+                android:text="Sin nombre"
+                android:textColor="@color/texto"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/perfilRol"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:text="Cuidador"
+                android:textColor="@color/apagado"
+                android:textSize="14sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/perfilDatos"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="18dp"
+        android:lineSpacingExtra="5dp"
+        android:text=""
+        android:textColor="@color/texto"
+        android:textSize="14sp" />
+
+    <TextView
+        android:id="@+id/perfilAviso"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:lineSpacingExtra="3dp"
+        android:text=""
+        android:textColor="@color/apagado"
+        android:textSize="12.5sp"
+        android:visibility="gone" />
+
+    <Button
+        android:id="@+id/perfilCambiarNombre"
+        android:layout_width="match_parent"
+        android:layout_height="46dp"
+        android:layout_marginTop="18dp"
+        android:backgroundTint="@color/borde"
+        android:text="Cambiar mi nombre"
+        android:textAllCaps="false"
+        android:textColor="@color/texto"
+        android:textSize="14sp" />
+
+    <Button
+        android:id="@+id/perfilGaleria"
+        android:layout_width="match_parent"
+        android:layout_height="46dp"
+        android:layout_marginTop="8dp"
+        android:backgroundTint="@color/borde"
+        android:text="Elegir foto de la galeria"
+        android:textAllCaps="false"
+        android:textColor="@color/texto"
+        android:textSize="14sp" />
+
+    <Button
+        android:id="@+id/perfilCamara"
+        android:layout_width="match_parent"
+        android:layout_height="46dp"
+        android:layout_marginTop="8dp"
+        android:backgroundTint="@color/borde"
+        android:text="Sacarme una foto ahora"
+        android:textAllCaps="false"
+        android:textColor="@color/texto"
+        android:textSize="14sp" />
+
+    <Button
+        android:id="@+id/perfilQuitarFoto"
+        android:layout_width="match_parent"
+        android:layout_height="46dp"
+        android:layout_marginTop="8dp"
+        android:backgroundTint="@color/borde"
+        android:text="Quitar la foto"
+        android:textAllCaps="false"
+        android:textColor="@color/rojo"
+        android:textSize="14sp" />
+</LinearLayout>

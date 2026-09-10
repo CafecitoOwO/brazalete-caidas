@@ -1,156 +1,285 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Una tarjeta por persona vigilada.
+<!-- Una tarjeta por persona vigilada, siguiendo el dibujo del cuaderno.
 
-     Sigue el dibujo del cuaderno, pero puesto en vertical: en un
-     telefono no caben cuatro graficas en fila, asi que van dos y mas
-     anchas, que se leen mejor. -->
+     Del dibujo se respeta la idea: el estado manda a la izquierda, quien
+     es con su foto y el punto de conexion a la derecha, la señal, la fila
+     de ubicacion con su boton de reconectar.
+
+     Dos cosas se apartan del dibujo a proposito:
+
+     1. Una sola grafica, no cuatro. El giroscopio llega como serie y se
+        puede dibujar; el pulso y los pasos llegan como un numero suelto,
+        asi que "dibujarlos" salia siempre la misma raya plana valiera 60
+        o 200. Van como cifra, que es lo que son.
+     2. La rejilla va a lo ancho. Encajada entre las dos columnas cada
+        grafica queda de unos 65dp en un telefono normal y no se lee. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginBottom="12dp"
     android:background="@drawable/tarjeta"
     android:orientation="vertical"
-    android:padding="16dp">
+    android:padding="14dp">
 
-    <!-- Cabecera: foto, nombre, que esta haciendo, y el semaforo -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:gravity="center_vertical"
         android:orientation="horizontal">
 
-        <ImageView
-            android:id="@+id/foto"
-            android:layout_width="46dp"
-            android:layout_height="46dp"
-            android:background="@drawable/circulo"
-            android:contentDescription="Foto"
-            android:padding="7dp"
-            android:src="@mipmap/ic_launcher" />
-
+        <!-- El estado es lo primero que hay que poder leer de lejos. -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="12dp"
+            android:layout_gravity="center_vertical"
             android:layout_weight="1"
             android:orientation="vertical">
-
-            <!-- Deja claro de quien es la tarjeta: es una persona vigilada,
-                 no vos. La confusion con el perfil propio era facil. -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="PERSONA VIGILADA"
-                android:textColor="@color/apagado"
-                android:textSize="10.5sp" />
-
-            <TextView
-                android:id="@+id/nombre"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Paciente"
-                android:textColor="@color/texto"
-                android:textSize="17sp"
-                android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/actividad"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
                 android:text="Sin datos"
+                android:textColor="@color/texto"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/txtAlertas"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="Alertas: --"
                 android:textColor="@color/apagado"
                 android:textSize="13sp" />
         </LinearLayout>
 
-        <View
-            android:id="@+id/luz"
-            android:layout_width="13dp"
-            android:layout_height="13dp"
-            android:background="@drawable/circulo" />
+        <LinearLayout
+            android:layout_width="104dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/nombre"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:text="Paciente"
+                    android:textColor="@color/texto"
+                    android:textSize="13.5sp"
+                    android:textStyle="bold" />
+
+                <!-- 48dp de zona de toque: con el dedo hay que poder darle,
+                     aunque el icono dibujado sea pequeño. -->
+                <TextView
+                    android:id="@+id/menuPac"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:contentDescription="Opciones de esta persona"
+                    android:gravity="center"
+                    android:text="☰"
+                    android:textColor="@color/apagado"
+                    android:textSize="17sp" />
+            </LinearLayout>
+
+            <ImageView
+                android:id="@+id/foto"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@drawable/circulo"
+                android:contentDescription="Foto"
+                android:padding="7dp"
+                android:src="@mipmap/ic_launcher" />
+
+            <!-- Un punto, un significado: aqui el punto y el texto hablan
+                 los dos de la conexion. El estado tiene su propio sitio. -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <View
+                    android:id="@+id/luz"
+                    android:layout_width="9dp"
+                    android:layout_height="9dp"
+                    android:layout_marginEnd="5dp"
+                    android:background="@drawable/circulo" />
+
+                <TextView
+                    android:id="@+id/txtConectado"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Sin datos"
+                    android:textColor="@color/apagado"
+                    android:textSize="12sp" />
+            </LinearLayout>
+        </LinearLayout>
     </LinearLayout>
 
-    <!-- Señales en vivo -->
-    <LinearLayout
+    <!-- La unica señal que llega como serie de verdad. -->
+    <com.proyecto.brazalete.MiniGrafica
+        android:id="@+id/ondaAcc"
         android:layout_width="match_parent"
         android:layout_height="62dp"
-        android:layout_marginTop="14dp"
+        android:layout_marginTop="12dp" />
+
+    <!-- Pulso, pasos y bateria: cifras, no rayas planas. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
         android:orientation="horizontal">
 
-        <com.proyecto.brazalete.MiniGrafica
-            android:id="@+id/ondaAcc"
+        <LinearLayout
             android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_marginEnd="8dp"
-            android:layout_weight="1" />
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
 
-        <com.proyecto.brazalete.MiniGrafica
-            android:id="@+id/ondaBat"
+            <TextView
+                android:id="@+id/cifraPulso"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="--"
+                android:textColor="@color/texto"
+                android:textSize="19sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="pulso"
+                android:textColor="@color/apagado"
+                android:textSize="11.5sp" />
+        </LinearLayout>
+
+        <LinearLayout
             android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1" />
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/cifraPasos"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="--"
+                android:textColor="@color/texto"
+                android:textSize="19sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="pasos"
+                android:textColor="@color/apagado"
+                android:textSize="11.5sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/cifraBateria"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="--"
+                android:textColor="@color/texto"
+                android:textSize="19sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="bateria"
+                android:textColor="@color/apagado"
+                android:textSize="11.5sp" />
+        </LinearLayout>
     </LinearLayout>
 
-    <!-- Numeros -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnMicPac"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_marginEnd="4dp"
+            android:layout_weight="1"
+            android:backgroundTint="@color/borde"
+            android:text="Pedir audio"
+            android:textAllCaps="false"
+            android:textColor="@color/texto"
+            android:textSize="13sp" />
+
+        <Button
+            android:id="@+id/btnVigilarPac"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="4dp"
+            android:layout_weight="1"
+            android:backgroundTint="@color/borde"
+            android:text="Pedir vigilancia"
+            android:textAllCaps="false"
+            android:textColor="@color/texto"
+            android:textSize="13sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/ubicacion"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Ubicacion: sin datos"
+            android:textColor="@color/apagado"
+            android:textSize="12.5sp" />
+
+        <Button
+            android:id="@+id/btnReconectarPac"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:layout_marginStart="8dp"
+            android:backgroundTint="@color/borde"
+            android:minWidth="0dp"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:text="Reconectar"
+            android:textAllCaps="false"
+            android:textColor="@color/texto"
+            android:textSize="12.5sp" />
+    </LinearLayout>
+
     <TextView
         android:id="@+id/numeros"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:lineSpacingExtra="3dp"
+        android:layout_marginTop="8dp"
+        android:lineSpacingExtra="2dp"
         android:text=""
         android:textColor="@color/apagado"
-        android:textSize="13sp" />
-
-    <!-- Ubicacion -->
-    <TextView
-        android:id="@+id/ubicacion"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:text="Ubicacion: sin datos"
-        android:textColor="@color/apagado"
-        android:textSize="13sp" />
-
-    <!-- Acciones -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:orientation="horizontal">
-
-        <Button
-            android:id="@+id/btnMapaPac"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="4dp"
-            android:layout_weight="1"
-            android:backgroundTint="@color/borde"
-            android:text="Mapa"
-            android:textColor="@color/texto"
-            android:textSize="12sp" />
-
-        <Button
-            android:id="@+id/btnDatosPac"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="4dp"
-            android:layout_marginEnd="4dp"
-            android:layout_weight="1"
-            android:backgroundTint="@color/borde"
-            android:text="Datos"
-            android:textColor="@color/texto"
-            android:textSize="12sp" />
-
-        <Button
-            android:id="@+id/btnQuitarPac"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="4dp"
-            android:layout_weight="1"
-            android:backgroundTint="@color/borde"
-            android:text="Quitar"
-            android:textColor="@color/rojo"
-            android:textSize="12sp" />
-    </LinearLayout>
+        android:textSize="12sp" />
 </LinearLayout>

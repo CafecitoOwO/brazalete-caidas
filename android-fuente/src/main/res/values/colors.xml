@@ -2,9 +2,11 @@
 <resources>
     <color name="fondo">#111417</color>
     <color name="tarjeta">#191D21</color>
-    <color name="borde">#262B30</color>
+    <!-- Los botones secundarios se pintan con esto sobre "tarjeta". A
+         #262B30 el contraste era 1.19:1: no parecian botones. -->
+    <color name="borde">#3C444C</color>
     <color name="texto">#E8E6E1</color>
-    <color name="apagado">#8D8A83</color>
+    <color name="apagado">#A5A29A</color>
     <color name="verde">#4ADE80</color>
     <color name="ambar">#FBBF24</color>
     <color name="rojo">#F87171</color>

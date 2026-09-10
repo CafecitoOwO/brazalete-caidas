@@ -147,8 +147,29 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
         });
 
         findViewById(R.id.btnSos).setOnClickListener(v -> {
-            pedirPermisos();
-            mandarAlServicio(ServicioVigilancia.ACCION_SOS);
+            // Dispara la alarma a todo volumen en todos los telefonos que
+            // te siguen. Un toque accidental no puede hacer eso.
+            int cuantos = 0;
+            ServicioVigilancia s = ServicioVigilancia.get();
+            if (s != null) {
+                for (ServicioVigilancia.EstadoPac q : s.pacientes.values()) {
+                    cuantos += q.cuidadores.size();
+                }
+            }
+            String aviso = cuantos > 0
+                    ? "Vas a avisar ahora mismo a " + cuantos
+                      + (cuantos == 1 ? " cuidador." : " cuidadores.")
+                    : "Todavia no hay ningun cuidador conectado, asi que "
+                      + "este aviso no le va a llegar a nadie.";
+            new androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle("Pedir ayuda?")
+                    .setMessage(aviso)
+                    .setPositiveButton("Pedir ayuda", (d, w) -> {
+                        pedirPermisos();
+                        mandarAlServicio(ServicioVigilancia.ACCION_SOS);
+                    })
+                    .setNegativeButton("Cancelar", null)
+                    .show();
         });
 
         findViewById(R.id.btnEscuchar).setOnClickListener(v -> {
@@ -195,38 +216,25 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
 
         // Tocar la foto de arriba abre el menu de perfil.
         findViewById(R.id.miFoto).setOnClickListener(v -> menuPerfil());
+        findViewById(R.id.menuApp).setOnClickListener(v -> {
+            android.widget.PopupMenu m = new android.widget.PopupMenu(this, v);
+            m.getMenu().add("Mi perfil");
+            m.getMenu().add("Compartir enlace al cuidador");
+            m.getMenu().add("Guardar historial en Descargas");
+            m.setOnMenuItemClickListener(it -> {
+                String t = String.valueOf(it.getTitle());
+                if (t.equals("Mi perfil")) menuPerfil();
+                else if (t.equals("Compartir enlace al cuidador")) compartirEnlace();
+                else if (t.equals("Guardar historial en Descargas")) guardarHistorial();
+                return true;
+            });
+            m.show();
+        });
         ponerFoto(findViewById(R.id.miFoto), ajustes.getFoto());
 
-        findViewById(R.id.btnInvitarCuidador).setOnClickListener(v -> {
-            java.util.List<String[]> l = ajustes.getPacientes();
-            if (l.isEmpty()) {
-                Toast.makeText(this, "Primero agrega a una persona", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            String[] p = l.get(0);
-            String url = WEB + "?sala=" + Uri.encode(p[0]) + "&modo=cuidador"
-                       + "&nombre=" + Uri.encode(p[1]);
-            Intent i = new Intent(Intent.ACTION_SEND);
-            i.setType("text/plain");
-            i.putExtra(Intent.EXTRA_TEXT,
-                    "Ayudame a cuidar a " + p[1] + ". Abri este enlace:\n" + url);
-            startActivity(Intent.createChooser(i, "Invitar a otro cuidador"));
-        });
+        findViewById(R.id.btnInvitarCuidador).setOnClickListener(v -> invitarCuidador());
 
-        findViewById(R.id.btnCompartir).setOnClickListener(v -> {
-            String sala = campoSala.getText().toString().trim();
-            if (sala.isEmpty()) sala = ajustes.getSala();
-            String nom = ajustes.getNombre().isEmpty() ? "Paciente" : ajustes.getNombre();
-            String url = WEB + "?sala=" + Uri.encode(sala) + "&modo=cuidador"
-                       + "&nombre=" + Uri.encode(nom);
-            Intent i = new Intent(Intent.ACTION_SEND);
-            i.setType("text/plain");
-            i.putExtra(Intent.EXTRA_TEXT,
-                    "Vigilame con CuidAPP. Abri este enlace:\n" + url
-                  + "\n\nPara que te avise con el telefono guardado, instala la app "
-                  + "desde el boton verde que sale ahi.");
-            startActivity(Intent.createChooser(i, "Enviar al cuidador"));
-        });
+        findViewById(R.id.btnCompartir).setOnClickListener(v -> compartirEnlace());
 
         pintarModo();
         pedirPermisos();
@@ -302,15 +310,24 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
                 tarjetasPac.put(sala, v);
                 filasPacientes.addView(v);
 
-                v.findViewById(R.id.btnQuitarPac).setOnClickListener(x -> {
-                    java.util.List<String[]> l = ajustes.getPacientes();
-                    java.util.List<String[]> nueva = new java.util.ArrayList<>();
-                    for (String[] q : l) if (!q[0].equals(sala)) nueva.add(q);
-                    ajustes.setPacientes(nueva);
-                    reconectar();
+                // El menu de la esquina recoge lo que en el dibujo cuelga
+                // del icono de rayas: mapa y quitar.
+                v.findViewById(R.id.menuPac).setOnClickListener(x -> menuPaciente(x, sala));
+
+                v.findViewById(R.id.btnReconectarPac).setOnClickListener(x -> reconectar());
+
+                v.findViewById(R.id.btnMicPac).setOnClickListener(x -> pedirMicrofono(sala));
+                v.findViewById(R.id.btnVigilarPac).setOnClickListener(x -> {
+                    ServicioVigilancia sv = ServicioVigilancia.get();
+                    if (sv == null) {
+                        Toast.makeText(this, "El servicio no esta activo",
+                                Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    sv.pedirVigilancia(sala);
+                    Toast.makeText(this, "Aviso enviado: le pedimos que inicie la vigilancia",
+                            Toast.LENGTH_SHORT).show();
                 });
-                v.findViewById(R.id.btnMapaPac).setOnClickListener(x -> abrirMapa(sala));
-                v.findViewById(R.id.btnDatosPac).setOnClickListener(x -> guardarHistorial());
             }
             actualizarTarjeta(v, sala, p[1], s);
         }
@@ -336,31 +353,49 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
         TextView act = v.findViewById(R.id.actividad);
         act.setText(estadoTxt);
         act.setTextColor(color);
-        v.findViewById(R.id.luz).getBackground().setTint(color);
+        // Un punto, un significado: el punto y el texto que tiene al lado
+        // hablan los dos de la CONEXION. El estado ya se lee en grande, con
+        // su propio color, en @id/actividad. Antes el punto iba tintado por
+        // el estado y la etiqueta por la conexion, pegados y contradiciendose.
+        TextView con = v.findViewById(R.id.txtConectado);
+        boolean enLinea = seg >= 0 && seg <= 45;
+        int colorCon = enLinea ? 0xFF4ADE80 : (seg < 0 ? 0xFF5A5751 : 0xFFF87171);
+        con.setText(enLinea ? "Conectado  -  " + haceCuanto(p.ultimo).replace("hace ", "")
+                            : (seg < 0 ? "Sin datos" : "Desconectado"));
+        con.setTextColor(colorCon);
+        v.findViewById(R.id.luz).getBackground().setTint(colorCon);
 
+        ((TextView) v.findViewById(R.id.txtAlertas)).setText(
+                s == null ? "Alertas: --"
+                          : "Alertas en 1 h: " + s.alertasUltimaHora(sala));
+
+        // "Movimiento", no "Giroscopio": lo que se dibuja es la fuerza que
+        // mide el acelerometro, y ademas nadie de fuera sabe que es un
+        // giroscopio.
         MiniGrafica onda = v.findViewById(R.id.ondaAcc);
-        onda.setTitulo("Aceleracion");
-        MiniGrafica bat = v.findViewById(R.id.ondaBat);
-        bat.setTitulo("Bateria");
-        bat.setColor("#60A5FA");
+        onda.setTitulo("Movimiento");
+
+        TextView cPul = v.findViewById(R.id.cifraPulso);
+        TextView cPas = v.findViewById(R.id.cifraPasos);
+        TextView cBat = v.findViewById(R.id.cifraBateria);
 
         if (p == null || seg < 0 || seg > 45) {
             onda.marcarDesconectado();
-            bat.marcarDesconectado();
+            cPul.setText("--"); cPas.setText("--"); cBat.setText("--");
         } else {
+            cPul.setText(p.bpm   > 0 ? String.valueOf(p.bpm)   : "--");
+            cPas.setText(p.pasos >= 0 ? String.valueOf(p.pasos) : "--");
+            cBat.setText(p.bat   >= 0 ? p.bat + "%"             : "--");
             onda.setDatos(p.ondas, 2.5f);
-            float[] sb = new float[p.serieBat.size()];
-            for (int i = 0; i < sb.length; i++) sb[i] = p.serieBat.get(i);
-            bat.setDatos(sb, Float.NaN);
         }
 
         StringBuilder n = new StringBuilder();
         if (p == null || seg < 0) n.append("Esperando su primera conexion");
         else {
-            n.append("Ultimo dato ").append(seg < 90 ? seg + " s" : (seg / 60) + " min").append(" atras");
-            if (p.bat >= 0) n.append("   ·   Bateria ").append(p.bat).append('%');
-            if (p.hz > 0)   n.append("   ·   ").append(p.hz).append(" Hz");
-            if (p.pasos > 0) n.append("\n").append(p.pasos).append(" pasos");
+            // El "hace cuanto", la bateria y los pasos ya salen arriba;
+            // aqui solo queda lo que no cabe en ningun otro sitio.
+            if (p.hz > 0) n.append("Midiendo ").append(p.hz)
+                          .append(" veces por segundo");
         }
         ((TextView) v.findViewById(R.id.numeros)).setText(n.toString());
 
@@ -368,7 +403,175 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
                 p == null || p.ubicacion.isEmpty()
                         ? "Ubicacion: solo se envia al saltar una alerta"
                         : "Ubicacion: " + p.ubicacion);
-        v.findViewById(R.id.btnMapaPac).setEnabled(p != null && !p.ubicacion.isEmpty());
+        v.findViewById(R.id.btnReconectarPac).setEnabled(s != null);
+    }
+
+    /**
+     * Invita a otro cuidador a seguir a una persona.
+     *
+     * Antes mandaba siempre al primero de la lista: con dos o mas personas
+     * a cargo era imposible invitar a nadie para la segunda. Ahora, si hay
+     * mas de una, pregunta para cual.
+     */
+    private void invitarCuidador() {
+        java.util.List<String[]> l = ajustes.getPacientes();
+        if (l.isEmpty()) {
+            Toast.makeText(this, "Primero agrega a una persona", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (l.size() == 1) { mandarInvitacion(l.get(0)); return; }
+
+        String[] nombres = new String[l.size()];
+        for (int i = 0; i < l.size(); i++) {
+            nombres[i] = l.get(i)[1].isEmpty() ? l.get(i)[0] : l.get(i)[1];
+        }
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Invitar un cuidador para quien?")
+                .setItems(nombres, (d, i) -> mandarInvitacion(l.get(i)))
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void mandarInvitacion(String[] p) {
+        String nom = p[1].isEmpty() ? p[0] : p[1];
+        String url = WEB + "?sala=" + Uri.encode(p[0]) + "&modo=cuidador"
+                   + "&nombre=" + Uri.encode(nom);
+        Intent i = new Intent(Intent.ACTION_SEND);
+        i.setType("text/plain");
+        i.putExtra(Intent.EXTRA_TEXT,
+                "Ayudame a cuidar a " + nom + ". Abri este enlace:\n" + url);
+        startActivity(Intent.createChooser(i, "Invitar a otro cuidador"));
+    }
+
+    /** Manda al cuidador el enlace que lo deja configurado solo. */
+    private void compartirEnlace() {
+        String sala = campoSala.getText().toString().trim();
+        if (sala.isEmpty()) sala = ajustes.getSala();
+        String nom = ajustes.getNombre().isEmpty() ? "Paciente" : ajustes.getNombre();
+        String url = WEB + "?sala=" + Uri.encode(sala) + "&modo=cuidador"
+                   + "&nombre=" + Uri.encode(nom);
+        Intent i = new Intent(Intent.ACTION_SEND);
+        i.setType("text/plain");
+        i.putExtra(Intent.EXTRA_TEXT,
+                "Vigilame con CuidAPP. Abri este enlace:\n" + url
+              + "\n\nPara que te avise con el telefono guardado, instala la app "
+              + "desde el boton verde que sale ahi.");
+        startActivity(Intent.createChooser(i, "Enviar al cuidador"));
+    }
+
+    /** Lo que en el dibujo cuelga del icono de rayas de cada paciente. */
+    private void menuPaciente(View ancla, String sala) {
+        android.widget.PopupMenu m = new android.widget.PopupMenu(this, ancla);
+        m.getMenu().add("Ver perfil");
+        m.getMenu().add("Ver en el mapa");
+        m.getMenu().add("Descargar datos");
+        m.getMenu().add("Cambiar el nombre");
+        m.getMenu().add("Quitar de la lista");
+        m.setOnMenuItemClickListener(it -> {
+            String t = String.valueOf(it.getTitle());
+            if (t.equals("Ver perfil")) verPerfil(sala);
+            else if (t.equals("Ver en el mapa")) abrirMapa(sala);
+            else if (t.equals("Descargar datos")) guardarHistorial();
+            else if (t.equals("Cambiar el nombre")) renombrarPaciente(sala);
+            else if (t.equals("Quitar de la lista")) quitarPaciente(sala);
+            return true;
+        });
+        m.show();
+    }
+
+    /** Cambiar como se llama esa persona en tu lista. */
+    private void renombrarPaciente(String sala) {
+        final android.widget.EditText campo = new android.widget.EditText(this);
+        campo.setText(ajustes.nombreDe(sala));
+        campo.setHint("Nombre");
+        int pad = Math.round(20 * getResources().getDisplayMetrics().density);
+        campo.setPadding(pad, pad / 2, pad, pad / 2);
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Nombre de esta persona")
+                .setView(campo)
+                .setPositiveButton("Guardar", (d, w) -> {
+                    String nuevo = campo.getText().toString().trim();
+                    if (nuevo.isEmpty()) return;
+                    java.util.List<String[]> lista = new java.util.ArrayList<>();
+                    for (String[] q : ajustes.getPacientes()) {
+                        lista.add(q[0].equals(sala) ? new String[]{q[0], nuevo} : q);
+                    }
+                    ajustes.setPacientes(lista);
+                    pintarTarjetasPacientes();
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void quitarPaciente(String sala) {
+        // Se pierde el seguimiento de esa persona: mejor preguntar antes.
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Quitar a " + ajustes.nombreDe(sala) + "?")
+                .setMessage("Dejaras de recibir sus avisos. El historial que ya "
+                          + "tienes guardado no se borra.")
+                .setPositiveButton("Quitar", (d, w) -> {
+                    java.util.List<String[]> nueva = new java.util.ArrayList<>();
+                    for (String[] q : ajustes.getPacientes()) {
+                        if (!q[0].equals(sala)) nueva.add(q);
+                    }
+                    ajustes.setPacientes(nueva);
+                    reconectar();
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    /** Ficha de la persona: lo que sabemos de ella ahora mismo. */
+    private void verPerfil(String sala) {
+        ServicioVigilancia s = ServicioVigilancia.get();
+        ServicioVigilancia.EstadoPac p = (s == null) ? null : s.pacientes.get(sala);
+        String nom = ajustes.nombreDe(sala);
+        StringBuilder sb = new StringBuilder();
+        sb.append("Codigo de sala: ").append(sala).append("\n");
+        if (p == null || p.ultimo == 0) {
+            sb.append("\nTodavia no se conecto ninguna vez.");
+        } else {
+            sb.append("Ultimo dato: ").append(haceCuanto(p.ultimo)).append("\n");
+            if (p.bat >= 0)   sb.append("Bateria: ").append(p.bat).append("%\n");
+            if (p.bpm > 0)    sb.append("Pulso: ").append(p.bpm).append(" bpm\n");
+            if (p.pasos >= 0) sb.append("Pasos: ").append(p.pasos).append("\n");
+            if (!p.actividad.isEmpty()) sb.append("Actividad: ").append(p.actividad).append("\n");
+            sb.append("Vigilando: ")
+              .append(p.vig ? (p.pausa ? "en pausa" : "si") : "no").append("\n");
+            if (!p.ubicacion.isEmpty()) sb.append("Ubicacion: ").append(p.ubicacion).append("\n");
+            sb.append("Cuidadores que la siguen: ").append(p.cuidadores.size());
+            if (s != null) sb.append("\nAlertas en la ultima hora: ")
+                             .append(s.alertasUltimaHora(sala));
+        }
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle(nom.isEmpty() ? "Perfil" : "Perfil de " + nom)
+                .setMessage(sb.toString())
+                .setPositiveButton("Cerrar", null)
+                .show();
+    }
+
+    /**
+     * Pide el audio de un paciente. Por diseño el microfono solo se abre
+     * si hay una alerta en curso, asi que fuera de eso se explica en vez
+     * de dejar un boton que no hace nada.
+     */
+    private void pedirMicrofono(String sala) {
+        ServicioVigilancia s = ServicioVigilancia.get();
+        if (s == null) {
+            Toast.makeText(this, "El servicio no esta activo", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        ServicioVigilancia.EstadoPac p = s.pacientes.get(sala);
+        boolean enAlerta = p != null && (p.estado.equals("caida") || p.estado.equals("prealerta"));
+        if (!enAlerta) {
+            Toast.makeText(this,
+                    "El microfono solo se abre durante una alerta. Ahora no hay ninguna.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        s.pedirAudioDe(sala, true);
+        Toast.makeText(this, "Pidiendo audio a " + ajustes.nombreDe(sala),
+                Toast.LENGTH_SHORT).show();
     }
 
     private void abrirMapa(String sala) {
@@ -478,44 +681,92 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
 
     private static final int LADO_FOTO = 128;
 
-    /** Menu que sale al tocar tu foto: cambiarla, sacarte una, o el nombre. */
+    /**
+     * Tu perfil: quien eres dentro de la app.
+     *
+     * Antes esto era solo una lista de cuatro acciones. No habia ninguna
+     * pantalla donde ver tu nombre, tu foto, tu rol ni tu codigo, que era
+     * justo lo que faltaba.
+     */
     private void menuPerfil() {
-        String nombre = ajustes.getNombre();
-        String titulo = nombre.isEmpty() ? "Tu perfil" : nombre;
-        String[] opciones = {
-                "Elegir una foto de la galeria",
-                "Sacarme una foto ahora",
-                "Cambiar mi nombre",
-                ajustes.getFoto().isEmpty() ? null : "Quitar la foto"
-        };
-        java.util.List<String> lista = new java.util.ArrayList<>();
-        for (String o : opciones) if (o != null) lista.add(o);
-        String[] finales = lista.toArray(new String[0]);
+        View v = getLayoutInflater().inflate(R.layout.dialog_perfil, null);
 
-        new androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle(titulo)
-                .setItems(finales, (d, i) -> {
-                    switch (finales[i]) {
-                        case "Elegir una foto de la galeria": elegirFoto.launch("image/*"); break;
-                        case "Sacarme una foto ahora":
-                            try { sacarFoto.launch(null); }
-                            catch (Exception e) {
-                                Toast.makeText(this, "No pude abrir la camara",
-                                        Toast.LENGTH_SHORT).show();
-                            }
-                            break;
-                        case "Cambiar mi nombre": pedirNombre(); break;
-                        case "Quitar la foto":
-                            ajustes.setFoto("");
-                            android.widget.ImageView iv = findViewById(R.id.miFoto);
-                            iv.setTag(null);
-                            ponerFoto(iv, "");
-                            reconectar();
-                            break;
-                    }
-                })
-                .setNegativeButton("Cancelar", null)
-                .show();
+        String nombre = ajustes.getNombre();
+        boolean brz = ajustes.esBrazalete();
+
+        ((TextView) v.findViewById(R.id.perfilNombre))
+                .setText(nombre.isEmpty() ? "Sin nombre todavia" : nombre);
+        ((TextView) v.findViewById(R.id.perfilRol))
+                .setText(brz ? "Persona vigilada (brazalete)" : "Cuidador");
+        ponerFoto(v.findViewById(R.id.perfilFoto), ajustes.getFoto());
+
+        ServicioVigilancia s = ServicioVigilancia.get();
+        StringBuilder d = new StringBuilder();
+        d.append("Tu codigo: ").append(ajustes.getSala().isEmpty()
+                ? "sin configurar" : ajustes.getSala());
+        if (brz) {
+            int n = (s == null) ? 0 : cuantosCuidadores(s);
+            d.append("\nCuidadores que te siguen: ").append(n);
+            d.append("\nVigilancia: ").append(
+                    s != null && s.getEstado().vigilando ? "activa" : "detenida");
+        } else {
+            d.append("\nPersonas a tu cargo: ").append(ajustes.getPacientes().size());
+            if (s != null) {
+                d.append("\nRegistros guardados: ").append(s.getEstado().registros);
+            }
+        }
+        d.append("\nConexion: ").append(
+                s != null && s.getEstado().conectado ? "conectado" : "sin conexion");
+        ((TextView) v.findViewById(R.id.perfilDatos)).setText(d.toString());
+
+        // El nombre no es decorativo: es lo que ve la otra persona.
+        if (nombre.isEmpty()) {
+            TextView aviso = v.findViewById(R.id.perfilAviso);
+            aviso.setText("Ponte un nombre: es como te ven los demas en sus "
+                        + "telefonos. Sin el sales como \"Cuidador\" a secas.");
+            aviso.setVisibility(View.VISIBLE);
+        }
+
+        androidx.appcompat.app.AlertDialog dlg =
+                new androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setView(v)
+                        .setPositiveButton("Cerrar", null)
+                        .create();
+
+        v.findViewById(R.id.perfilCambiarNombre).setOnClickListener(x -> {
+            dlg.dismiss(); pedirNombre();
+        });
+        v.findViewById(R.id.perfilGaleria).setOnClickListener(x -> {
+            dlg.dismiss(); elegirFoto.launch("image/*");
+        });
+        v.findViewById(R.id.perfilCamara).setOnClickListener(x -> {
+            dlg.dismiss();
+            try { sacarFoto.launch(null); }
+            catch (Exception e) {
+                Toast.makeText(this, "No pude abrir la camara", Toast.LENGTH_SHORT).show();
+            }
+        });
+        View quitar = v.findViewById(R.id.perfilQuitarFoto);
+        if (ajustes.getFoto().isEmpty()) {
+            quitar.setVisibility(View.GONE);
+        } else {
+            quitar.setOnClickListener(x -> {
+                dlg.dismiss();
+                ajustes.setFoto("");
+                android.widget.ImageView iv = findViewById(R.id.miFoto);
+                iv.setTag(null);
+                ponerFoto(iv, "");
+                reconectar();
+            });
+        }
+        dlg.show();
+    }
+
+    /** Cuantos cuidadores te siguen, sumando los de todas tus salas. */
+    private int cuantosCuidadores(ServicioVigilancia s) {
+        int n = 0;
+        for (ServicioVigilancia.EstadoPac p : s.pacientes.values()) n += p.cuidadores.size();
+        return n;
     }
 
     /** Cambiar el nombre con el que te ven los demas. */
@@ -660,7 +911,10 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
 
     private void pintarModo() {
         boolean brz = ajustes.esBrazalete();
-        titulo.setText(brz ? "CuidAPP" : "CuidAPP - Cuidador");
+        // En el dibujo el renglon grande es el nombre de quien usa la
+        // app ("Usuario 9"), con la marca en el logo de al lado.
+        String yo = ajustes.getNombre();
+        titulo.setText(yo.isEmpty() ? (brz ? "CuidAPP" : "CuidAPP - Cuidador") : yo);
         tarjetaCuidador.setVisibility(brz ? View.GONE : View.VISIBLE);
         tarjetaHistorial.setVisibility(brz ? View.GONE : View.VISIBLE);
         // El paciente ve quien lo vigila; el cuidador ve a sus pacientes.
@@ -673,6 +927,8 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
         // en segundo plano, que es lo que hace que suene con el movil guardado.
         btnVigilar.setVisibility(View.VISIBLE);
         findViewById(R.id.btnDemo).setVisibility(brz ? View.VISIBLE : View.GONE);
+        // El SOS avisa a TUS cuidadores: en modo cuidador no llega a nadie.
+        findViewById(R.id.btnSos).setVisibility(brz ? View.VISIBLE : View.GONE);
     }
 
     // ------------------------------------------------------------------
@@ -719,7 +975,8 @@ public class MainActivity extends AppCompatActivity implements ServicioVigilanci
                 detalle = "sos el cuidador · " + (n == 0 ? "sin nadie a cargo"
                         : n == 1 ? "1 persona a cargo" : n + " personas a cargo");
             }
-            subestado.setText(yo + "  ·  " + detalle);
+            // El nombre ya es el titulo, justo encima: aqui solo el detalle.
+            subestado.setText(detalle);
 
             boolean brz = ajustes.esBrazalete();
             estadoVig.setText(e.vigilando ? (brz ? "Activa" : "Escuchando") : "Detenida");

@@ -44,10 +44,15 @@ public class MiniGrafica extends View {
         umbral.setPathEffect(new DashPathEffect(new float[]{dp(4), dp(4)}, 0));
 
         texto.setColor(Color.parseColor("#8D8A83"));
-        texto.setTextSize(dp(10));
+        texto.setTextSize(sp(10));
     }
 
     private float dp(float v) { return v * getResources().getDisplayMetrics().density; }
+
+    /** Como dp, pero siguiendo el tamano de letra que eligio la persona. */
+    private float sp(float v) {
+        return v * getResources().getDisplayMetrics().scaledDensity;
+    }
 
     public void setTitulo(String t) { titulo = t; invalidate(); }
     public void setColor(String hex) { linea.setColor(Color.parseColor(hex)); invalidate(); }
@@ -68,9 +73,9 @@ public class MiniGrafica extends View {
         if (!titulo.isEmpty()) c.drawText(titulo, 0, dp(10), texto);
 
         if (sinDatos) {
-            texto.setTextSize(dp(11));
+            texto.setTextSize(sp(11));
             c.drawText("desconectado", dp(2), h / 2 + dp(4), texto);
-            texto.setTextSize(dp(10));
+            texto.setTextSize(sp(10));
             return;
         }
 

@@ -84,10 +84,15 @@ public class GraficaHistorial extends View {
         marca.setStrokeWidth(dp(1.6f));
 
         texto.setColor(GRIS);
-        texto.setTextSize(dp(9.5f));
+        texto.setTextSize(sp(9.5f));
     }
 
     private float dp(float v) { return v * getResources().getDisplayMetrics().density; }
+
+    /** Como dp, pero siguiendo el tamano de letra que eligio la persona. */
+    private float sp(float v) {
+        return v * getResources().getDisplayMetrics().scaledDensity;
+    }
 
     /** Cambia la ventana de tiempo sin volver a parsear el historial. */
     public void setRango(long ms) { rango = ms; invalidate(); }
@@ -241,9 +246,9 @@ public class GraficaHistorial extends View {
     }
 
     private void dibujarAviso(Canvas c, float w, float h, String txt) {
-        texto.setTextSize(dp(11));
+        texto.setTextSize(sp(11));
         c.drawText(txt, (w - texto.measureText(txt)) / 2, h / 2, texto);
-        texto.setTextSize(dp(9.5f));
+        texto.setTextSize(sp(9.5f));
     }
 
     /** Etiquetas del eje de tiempo, con el formato que toque segun el rango. */

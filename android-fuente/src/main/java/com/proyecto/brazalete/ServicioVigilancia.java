@@ -534,6 +534,42 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         avisar();
     }
 
+    /**
+     * Pide a un paciente que encienda la vigilancia desde su telefono.
+     *
+     * No se arranca en remoto a proposito: hacen falta permisos suyos y
+     * que la persona se entere. Lo que viaja es el aviso; el boton lo
+     * toca el.
+     */
+    public void pedirVigilancia(String sala) {
+        if (sala == null || sala.isEmpty() || nube == null) return;
+        nube.enviarEvento(sala, "PEDIR_VIGILANCIA", ajustes.getNombre(), false);
+    }
+
+    /** Pide (o corta) el audio de un paciente concreto. */
+    public void pedirAudioDe(String sala, boolean activo) {
+        if (sala == null || sala.isEmpty() || nube == null) return;
+        nube.pedirEscuchar(sala, activo, ajustes.getNombre());
+    }
+
+    /** Cuantas alertas de verdad tuvo esa persona en la ultima hora. */
+    public int alertasUltimaHora(String sala) {
+        long desde = System.currentTimeMillis() - 3600000L;
+        int n = 0;
+        for (String s : historialCrudo()) {
+            try {
+                org.json.JSONObject j = new org.json.JSONObject(s);
+                if (!"ev".equals(j.optString("k")) || j.optBoolean("prueba")) continue;
+                if (j.optLong("t") < desde) continue;
+                if (sala != null && !sala.isEmpty() && !sala.equals(j.optString("sala"))) continue;
+                String t = j.optString("tipo");
+                if (t.equals("PREALERTA") || t.equals("CAIDA_CONFIRMADA")
+                        || t.equals("SOS_MANUAL")) n++;
+            } catch (Exception ignored) { }
+        }
+        return n;
+    }
+
     /** Manda un toque a otro cuidador para que entre a revisar. */
     public void avisarACuidador(String sala, String idDestino, String deNombre, String paciente) {
         nube.enviarAviso(sala, idDestino, deNombre, paciente);
@@ -866,6 +902,26 @@ public class ServicioVigilancia extends Service implements SensorEventListener, 
         EstadoPac p = pac(sala);
         p.ultimo = System.currentTimeMillis();
         estado.ultimoRemoto = p.ultimo;
+
+        // Peticion de encender la vigilancia. No es una caida: sin este
+        // return caeria en el else de abajo y marcaria a la persona como
+        // caida solo por haberle pedido que active la app.
+        if (tipo.equals("PEDIR_VIGILANCIA")) {
+            if (!viejo && ajustes.esBrazalete() && !estado.vigilando) {
+                String de = (datos == null || datos.isEmpty()) ? "Tu cuidador" : datos;
+                NotificationCompat.Builder b =
+                        new NotificationCompat.Builder(this, CANAL_ALERTA)
+                        .setContentTitle(de + " te pide que inicies la vigilancia")
+                        .setContentText("Abre CuidAPP y toca Iniciar vigilancia.")
+                        .setSmallIcon(android.R.drawable.ic_dialog_info)
+                        .setPriority(NotificationCompat.PRIORITY_HIGH)
+                        .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                        .setAutoCancel(true)
+                        .setContentIntent(abrirApp());
+                getSystemService(NotificationManager.class).notify(ID_NOTIF_AVISO, b.build());
+            }
+            return;
+        }
 
         if (tipo.equals("CANCELADA")) {
             p.estado = "ok";
